@@ -105,6 +105,74 @@
                         </div>
                     </StandardItem>
                 </div>
+
+                <!-- Manual point entry (collapsed by default) -->
+                <div class='col-12 px-2 pb-2'>
+                    <StandardItem class='p-0'>
+                        <div class='col-12'>
+                            <div
+                                class='d-flex align-items-center gap-2 p-2 cursor-pointer user-select-none'
+                                role='button'
+                                tabindex='0'
+                                @click='toggleManual'
+                                @keydown.enter='toggleManual'
+                            >
+                                <IconChevronDown
+                                    v-if='manualOpen'
+                                    :size='20'
+                                    stroke='1'
+                                />
+                                <IconChevronRight
+                                    v-else
+                                    :size='20'
+                                    stroke='1'
+                                />
+                                <span class='fw-bold'>Manual Point</span>
+                                <span class='text-secondary small ms-auto'>Custom location &amp; ring</span>
+                            </div>
+
+                            <div
+                                v-if='manualOpen'
+                                class='px-2 pb-3'
+                            >
+                                <label class='form-label'>Name</label>
+                                <input
+                                    v-model='manualName'
+                                    class='form-control mb-2'
+                                    placeholder='Manual Point'
+                                >
+
+                                <Coordinate
+                                    v-model='manualCoords'
+                                    label='Location'
+                                    :edit='true'
+                                    :hover='true'
+                                />
+
+                                <div class='d-flex gap-2 pt-3'>
+                                    <button
+                                        class='btn'
+                                        :class='{ "btn-primary": picking }'
+                                        @click='togglePickFromMap'
+                                    >
+                                        <IconCrosshair
+                                            :size='18'
+                                            stroke='1'
+                                            class='me-1'
+                                        />
+                                        {{ picking ? 'Click the map…' : 'Select on Map' }}
+                                    </button>
+                                    <button
+                                        class='btn btn-primary ms-auto'
+                                        @click='useManualPoint'
+                                    >
+                                        Use This Point
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </StandardItem>
+                </div>
             </template>
 
             <!-- Step 2: configure & generate -->
@@ -315,6 +383,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import MenuTemplate from '../../../src/components/CloudTAK/util/MenuTemplate.vue';
 import StandardItem from '../../../src/components/CloudTAK/util/StandardItem.vue';
+import Coordinate from '../../../src/components/CloudTAK/util/Coordinate.vue';
 import {
     TablerNone,
     TablerLoading,
@@ -322,8 +391,12 @@ import {
 } from '@tak-ps/vue-tabler';
 import {
     IconMapPin,
-    IconPolygon
+    IconPolygon,
+    IconCrosshair,
+    IconChevronDown,
+    IconChevronRight
 } from '@tabler/icons-vue';
+import type { MapMouseEvent } from 'maplibre-gl';
 import { useMapStore } from '../../../src/stores/map.ts';
 import KV from '../../../src/base/kv.ts';
 import type { Feature } from '../../../src/types.ts';
@@ -379,6 +452,12 @@ const config = ref({
     basemap: ''
 });
 
+// Manual point entry state
+const manualOpen = ref(false);
+const manualName = ref('');
+const manualCoords = ref<number[]>([0, 0]);
+const picking = ref(false);
+
 const mission = computed(() => mapStore.mission);
 const missionName = computed(() => mapStore.mission ? mapStore.mission.meta.name : '');
 
@@ -394,8 +473,82 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+    stopPicking();
     removePreview();
 });
+
+function toggleManual(): void {
+    manualOpen.value = !manualOpen.value;
+
+    // Seed the coordinate field with the current map center on first open
+    if (
+        manualOpen.value
+        && manualCoords.value[0] === 0
+        && manualCoords.value[1] === 0
+        && mapStore.map
+    ) {
+        const center = mapStore.map.getCenter();
+        manualCoords.value = [
+            Math.round(center.lng * 1000000) / 1000000,
+            Math.round(center.lat * 1000000) / 1000000
+        ];
+    }
+
+    if (!manualOpen.value) stopPicking();
+}
+
+const mapPickHandler = (e: MapMouseEvent): void => {
+    manualCoords.value = [
+        Math.round(e.lngLat.lng * 1000000) / 1000000,
+        Math.round(e.lngLat.lat * 1000000) / 1000000
+    ];
+
+    stopPicking();
+};
+
+function togglePickFromMap(): void {
+    if (picking.value) {
+        stopPicking();
+        return;
+    }
+
+    if (!mapStore.map) return;
+
+    picking.value = true;
+    mapStore.map.getCanvas().style.cursor = 'crosshair';
+    mapStore.map.once('click', mapPickHandler);
+}
+
+function stopPicking(): void {
+    picking.value = false;
+
+    if (mapStore.map) {
+        mapStore.map.getCanvas().style.cursor = '';
+        mapStore.map.off('click', mapPickHandler);
+    }
+}
+
+function useManualPoint(): void {
+    stopPicking();
+
+    const callsign = manualName.value.trim() || 'Manual Point';
+
+    selected.value = {
+        id: 'search-containment-manual',
+        type: 'Feature',
+        path: '/',
+        properties: {
+            callsign
+        },
+        geometry: {
+            type: 'Point',
+            coordinates: [manualCoords.value[0], manualCoords.value[1]]
+        }
+    } as unknown as Feature;
+
+    error.value = '';
+    stage.value = 'configure';
+}
 
 async function reload(): Promise<void> {
     loading.value = true;
