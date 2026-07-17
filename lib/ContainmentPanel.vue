@@ -44,23 +44,24 @@
             <!-- Step 1: pick the source feature -->
             <template v-else-if='stage === "pick"'>
                 <div class='col-12 px-2 py-2 text-secondary small'>
-                    Select a shape or marker from
+                    Select a shape from
                     <span
                         class='fw-bold'
                         v-text='missionName'
                     />
-                    to build the containment ring around.
+                    to build the containment ring around, or use a Manual
+                    Point below.
                 </div>
 
                 <TablerNone
                     v-if='sources.length === 0'
                     :create='false'
-                    label='Eligible Features'
+                    label='Eligible Shapes'
                 >
                     <template #actions>
                         <div class='col-12 px-3 py-2 text-center text-secondary'>
-                            The active mission has no markers, polygons or
-                            circles to build a ring from.
+                            The active mission has no polygons or circles to
+                            build a ring from — use a Manual Point below.
                         </div>
                     </template>
                 </TablerNone>
@@ -79,13 +80,7 @@
                             class='d-flex align-items-center justify-content-center rounded-circle bg-black bg-opacity-25'
                             style='width: 2.5rem; height: 2.5rem; min-width: 2.5rem;'
                         >
-                            <IconMapPin
-                                v-if='feat.geometry.type === "Point"'
-                                :size='20'
-                                stroke='1'
-                            />
                             <IconPolygon
-                                v-else
                                 :size='20'
                                 stroke='1'
                             />
@@ -100,7 +95,7 @@
                             />
                             <div
                                 class='text-secondary small'
-                                v-text='feat.geometry.type === "Point" ? "Marker" : "Shape"'
+                                v-text='"Shape"'
                             />
                         </div>
                     </StandardItem>
@@ -190,7 +185,7 @@
                             <div
                                 class='text-secondary small'
                                 v-text='selected.geometry.type === "Point"
-                                    ? "Range ring around marker"
+                                    ? "Range ring around point"
                                     : "Ring offset outward from boundary"'
                             />
                         </div>
@@ -390,7 +385,6 @@ import {
     TablerRefreshButton
 } from '@tak-ps/vue-tabler';
 import {
-    IconMapPin,
     IconPolygon,
     IconCrosshair,
     IconChevronDown,
@@ -415,7 +409,6 @@ import {
     type SnappingBasemap
 } from './trails.ts';
 import {
-    CONTAINMENT_RE,
     nextContainmentNumber,
     buildContainmentMarker,
     buildRingFeature
@@ -561,7 +554,7 @@ async function reload(): Promise<void> {
             config.value.basemap = basemaps.value[0].name;
         }
 
-        await loadSources();
+        await loadSources(true);
     } catch (err) {
         error.value = err instanceof Error ? err.message : String(err);
     } finally {
@@ -569,22 +562,19 @@ async function reload(): Promise<void> {
     }
 }
 
-async function loadSources(): Promise<void> {
+async function loadSources(refresh = false): Promise<void> {
     if (!mapStore.mission) {
         sources.value = [];
         return;
     }
 
-    const feats = await mapStore.mission.feature.list();
+    // refresh=true re-fetches the mission feature list from the TAK
+    // Server rather than trusting the local cache
+    const feats = await mapStore.mission.feature.list({ refresh });
 
+    // Shapes only — point sources are handled by the Manual Point entry
     sources.value = feats.filter((feat) => {
-        if (!['Point', 'Polygon', 'MultiPolygon'].includes(feat.geometry.type)) return false;
-
-        // Don't offer previously generated containment markers as sources
-        const callsign = typeof feat.properties.callsign === 'string' ? feat.properties.callsign.trim() : '';
-        if (CONTAINMENT_RE.test(callsign)) return false;
-
-        return true;
+        return ['Polygon', 'MultiPolygon'].includes(feat.geometry.type);
     });
 }
 
