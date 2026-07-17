@@ -10,7 +10,7 @@
 import type { App } from 'vue';
 import { defineAsyncComponent, markRaw } from 'vue';
 import type { PluginAPI, PluginInstance, PluginStatic } from '@tak-ps/cloudtak';
-import { IconChartCircles } from '@tabler/icons-vue';
+import { IconBarrierBlock } from '@tabler/icons-vue';
 
 const ContainmentPanel = defineAsyncComponent(
     () => import('./lib/ContainmentPanel.vue'),
@@ -44,7 +44,7 @@ export default class SearchContainmentPlugin implements PluginInstance {
             route: ROUTE_NAME,
             tooltip: 'Search Containment',
             description: 'Generate containment points where trails cross a range ring',
-            icon: markRaw(IconChartCircles) as unknown as MenuItemIconType,
+            icon: markRaw(IconBarrierBlock) as unknown as MenuItemIconType,
         } as MenuItemConfig);
     }
 

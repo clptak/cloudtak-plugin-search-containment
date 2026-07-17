@@ -203,30 +203,32 @@
                     </StandardItem>
 
                     <div class='row g-2 pt-3'>
-                        <div class='col-7'>
-                            <label class='form-label'>Distance</label>
-                            <input
-                                v-model.number='config.distance'
-                                type='number'
-                                min='0'
-                                step='any'
-                                class='form-control'
-                            >
-                        </div>
-                        <div class='col-5'>
-                            <label class='form-label'>Units</label>
-                            <select
-                                v-model='config.unit'
-                                class='form-select'
-                            >
-                                <option value='miles'>
-                                    Miles
-                                </option>
-                                <option value='meters'>
-                                    Meters
-                                </option>
-                            </select>
-                        </div>
+                        <template v-if='mode !== "check"'>
+                            <div class='col-7'>
+                                <label class='form-label'>Distance</label>
+                                <input
+                                    v-model.number='config.distance'
+                                    type='number'
+                                    min='0'
+                                    step='any'
+                                    class='form-control'
+                                >
+                            </div>
+                            <div class='col-5'>
+                                <label class='form-label'>Units</label>
+                                <select
+                                    v-model='config.unit'
+                                    class='form-select'
+                                >
+                                    <option value='miles'>
+                                        Miles
+                                    </option>
+                                    <option value='meters'>
+                                        Meters
+                                    </option>
+                                </select>
+                            </div>
+                        </template>
 
                         <div class='col-7'>
                             <label class='form-label'>Merge points within (m)</label>
@@ -305,18 +307,25 @@
                             class='fw-bold'
                             v-text='points.length'
                         />
-                        containment point{{ points.length === 1 ? '' : 's' }} found
-                        where trails cross the ring &mdash; previewed on the map as
-                        <span class='fw-bold'>Containment {{ startNumber }}</span>
+                        trail crossing{{ points.length === 1 ? '' : 's' }} found
+                        &mdash; previewed on the map as
+                        <span class='fw-bold'>{{ labelPrefix }} {{ startNumber }}</span>
                         through
-                        <span class='fw-bold'>Containment {{ startNumber + points.length - 1 }}</span>.
+                        <span class='fw-bold'>{{ labelPrefix }} {{ startNumber + points.length - 1 }}</span>.
+                    </div>
+                    <div
+                        v-else-if='shouldPostRing'
+                        class='alert alert-warning'
+                    >
+                        No trail crossings were found on the ring. You can still
+                        post the ring itself, or go back and adjust the distance.
                     </div>
                     <div
                         v-else
                         class='alert alert-warning'
                     >
-                        No trail crossings were found on the ring. You can still
-                        post the ring itself, or go back and adjust the distance.
+                        No trail crossings were found along the line. Go back
+                        and adjust the merge spacing or pick a different line.
                     </div>
 
                     <div
@@ -356,7 +365,7 @@
                             class='fw-bold'
                             v-text='postedCount'
                         />
-                        containment marker{{ postedCount === 1 ? '' : 's' }}{{ shouldPostRing ? ' and the containment ring' : '' }} to
+                        {{ labelPrefix }} marker{{ postedCount === 1 ? '' : 's' }}{{ shouldPostRing ? ' and the containment ring' : '' }} to
                         <span
                             class='fw-bold'
                             v-text='missionName'
@@ -372,6 +381,55 @@
                     </div>
                 </div>
             </template>
+
+            <!-- Line usage choice modal -->
+            <TablerModal
+                v-if='pendingLine'
+                size='sm'
+            >
+                <div class='modal-status bg-blue' />
+                <button
+                    type='button'
+                    class='btn-close'
+                    aria-label='Close'
+                    @click='pendingLine = undefined'
+                />
+                <div class='modal-header text-body'>
+                    <div
+                        class='modal-title'
+                        v-text='String(pendingLine.properties.callsign || "Unnamed Line")'
+                    />
+                </div>
+                <div class='modal-body text-body'>
+                    <div class='d-flex flex-column gap-2'>
+                        <button
+                            class='btn btn-primary w-100 text-start'
+                            @click='chooseLineMode("containment")'
+                        >
+                            <div class='fw-bold'>
+                                Containment
+                            </div>
+                            <div class='small'>
+                                Offset a ring from the line by a distance
+                                (0 = the line itself) and mark trail
+                                crossings as Containment points
+                            </div>
+                        </button>
+                        <button
+                            class='btn btn-secondary w-100 text-start'
+                            @click='chooseLineMode("check")'
+                        >
+                            <div class='fw-bold'>
+                                Location Check
+                            </div>
+                            <div class='small'>
+                                Mark every point where this line crosses
+                                the trail network as "Check Location"
+                            </div>
+                        </button>
+                    </div>
+                </div>
+            </TablerModal>
         </template>
     </MenuTemplate>
 </template>
@@ -383,6 +441,7 @@ import StandardItem from '../../../src/components/CloudTAK/util/StandardItem.vue
 import Coordinate from '../../../src/components/CloudTAK/util/Coordinate.vue';
 import {
     TablerNone,
+    TablerModal,
     TablerLoading,
     TablerRefreshButton
 } from '@tak-ps/vue-tabler';
@@ -413,7 +472,7 @@ import {
     type SnappingBasemap
 } from './trails.ts';
 import {
-    nextContainmentNumber,
+    nextLabelNumber,
     buildContainmentMarker,
     buildRingFeature
 } from './markers.ts';
@@ -435,6 +494,12 @@ const stage = ref<'pick' | 'configure' | 'preview' | 'done'>('pick');
 const basemaps = ref<SnappingBasemap[]>([]);
 const sources = ref<Feature[]>([]);
 const selected = ref<Feature | undefined>();
+
+// 'containment' = ring/offset behavior; 'check' = raw line ∩ trails
+const mode = ref<'containment' | 'check'>('containment');
+
+// Line feature awaiting the Containment / Location Check choice
+const pendingLine = ref<Feature | undefined>();
 
 const rings = ref<Position[][]>([]);
 const points = ref<Position[]>([]);
@@ -472,10 +537,16 @@ function isLineGeometry(feat: Feature): boolean {
     return ['LineString', 'MultiLineString'].includes(feat.geometry.type);
 }
 
+const labelPrefix = computed(() => {
+    return mode.value === 'check' ? 'Check Location' : 'Containment';
+});
+
 const sourceModeLabel = computed(() => {
     if (!selected.value) return '';
 
-    if (selected.value.geometry.type === 'Point') {
+    if (mode.value === 'check') {
+        return 'Location check — line crossings with the trail network';
+    } else if (selected.value.geometry.type === 'Point') {
         return 'Range ring around point';
     } else if (isLineGeometry(selected.value)) {
         return 'Trail crossings along the line (distance 0 = the line itself)';
@@ -563,6 +634,7 @@ function useManualPoint(): void {
         }
     } as unknown as Feature;
 
+    mode.value = 'containment';
     error.value = '';
     stage.value = 'configure';
 }
@@ -603,7 +675,25 @@ async function loadSources(refresh = false): Promise<void> {
 }
 
 function selectSource(feat: Feature): void {
+    if (isLineGeometry(feat)) {
+        // Ask whether the line is a containment boundary or a
+        // location check before continuing
+        pendingLine.value = feat;
+        return;
+    }
+
     selected.value = feat;
+    mode.value = 'containment';
+    error.value = '';
+    stage.value = 'configure';
+}
+
+function chooseLineMode(chosen: 'containment' | 'check'): void {
+    if (!pendingLine.value) return;
+
+    selected.value = pendingLine.value;
+    mode.value = chosen;
+    pendingLine.value = undefined;
     error.value = '';
     stage.value = 'configure';
 }
@@ -611,6 +701,7 @@ function selectSource(feat: Feature): void {
 function backToPick(): void {
     removePreview();
     selected.value = undefined;
+    mode.value = 'containment';
     error.value = '';
     stage.value = 'pick';
 }
@@ -625,7 +716,11 @@ async function generate(): Promise<void> {
         const basemap = basemaps.value.find((b) => b.name === config.value.basemap);
         if (!basemap) throw new Error('No trail network selected');
 
-        const distanceKm = toKilometers(config.value.distance, config.value.unit);
+        // Location check always uses the raw line — no offset transform
+        const distanceKm = mode.value === 'check'
+            ? 0
+            : toKilometers(config.value.distance, config.value.unit);
+
         const lineAsIs = isLineGeometry(selected.value) && distanceKm <= 0;
 
         shouldPostRing.value = !lineAsIs;
@@ -643,7 +738,7 @@ async function generate(): Promise<void> {
             ? sortAlongLine(clustered, rings.value.flat())
             : sortClockwise(clustered);
 
-        startNumber.value = nextContainmentNumber(await mapStore.mission.feature.list());
+        startNumber.value = nextLabelNumber(await mapStore.mission.feature.list(), labelPrefix.value);
 
         await saveSettings();
 
@@ -670,7 +765,7 @@ async function confirm(): Promise<void> {
 
     try {
         // Re-check numbering at post time in case the mission changed
-        startNumber.value = nextContainmentNumber(await mapStore.mission.feature.list());
+        startNumber.value = nextLabelNumber(await mapStore.mission.feature.list(), labelPrefix.value);
 
         const sourceName = selected.value && typeof selected.value.properties.callsign === 'string'
             ? selected.value.properties.callsign.trim()
@@ -691,7 +786,7 @@ async function confirm(): Promise<void> {
 
         for (let i = 0; i < points.value.length; i++) {
             await mapStore.worker.db.add(
-                buildContainmentMarker(points.value[i], startNumber.value + i, config.value.color),
+                buildContainmentMarker(points.value[i], startNumber.value + i, config.value.color, labelPrefix.value),
                 { authored: true }
             );
         }
