@@ -395,38 +395,71 @@
                     @click='pendingLine = undefined'
                 />
                 <div class='modal-header text-body'>
-                    <div
-                        class='modal-title'
-                        v-text='String(pendingLine.properties.callsign || "Unnamed Line")'
-                    />
+                    <div class='d-flex flex-column'>
+                        <div class='modal-title'>
+                            Use Line As&hellip;
+                        </div>
+                        <div
+                            class='text-secondary small'
+                            v-text='String(pendingLine.properties.callsign || "Unnamed Line")'
+                        />
+                    </div>
                 </div>
                 <div class='modal-body text-body'>
                     <div class='d-flex flex-column gap-2'>
-                        <button
-                            class='btn btn-primary w-100 text-start'
+                        <StandardItem
+                            class='d-flex align-items-center gap-3 p-2'
                             @click='chooseLineMode("containment")'
                         >
-                            <div class='fw-bold'>
-                                Containment
+                            <div
+                                class='d-flex align-items-center justify-content-center rounded-circle bg-black bg-opacity-25'
+                                style='width: 2.5rem; height: 2.5rem; min-width: 2.5rem;'
+                            >
+                                <IconBarrierBlock
+                                    :size='20'
+                                    stroke='1'
+                                />
                             </div>
-                            <div class='small'>
-                                Offset a ring from the line by a distance
-                                (0 = the line itself) and mark trail
-                                crossings as Containment points
+                            <div
+                                class='d-flex flex-column'
+                                style='min-width: 0'
+                            >
+                                <div class='fw-bold'>
+                                    Containment
+                                </div>
+                                <div class='text-secondary small'>
+                                    Offset a ring from the line by a distance
+                                    (0 = the line itself) and mark trail
+                                    crossings as Containment points
+                                </div>
                             </div>
-                        </button>
-                        <button
-                            class='btn btn-secondary w-100 text-start'
+                        </StandardItem>
+                        <StandardItem
+                            class='d-flex align-items-center gap-3 p-2'
                             @click='chooseLineMode("check")'
                         >
-                            <div class='fw-bold'>
-                                Location Check
+                            <div
+                                class='d-flex align-items-center justify-content-center rounded-circle bg-black bg-opacity-25'
+                                style='width: 2.5rem; height: 2.5rem; min-width: 2.5rem;'
+                            >
+                                <IconCrosshair
+                                    :size='20'
+                                    stroke='1'
+                                />
                             </div>
-                            <div class='small'>
-                                Mark every point where this line crosses
-                                the trail network as "Check Location"
+                            <div
+                                class='d-flex flex-column'
+                                style='min-width: 0'
+                            >
+                                <div class='fw-bold'>
+                                    Location Check
+                                </div>
+                                <div class='text-secondary small'>
+                                    Mark every point where this line crosses
+                                    the trail network as "Check Location"
+                                </div>
                             </div>
-                        </button>
+                        </StandardItem>
                     </div>
                 </div>
             </TablerModal>
@@ -450,7 +483,8 @@ import {
     IconPolygon,
     IconCrosshair,
     IconChevronDown,
-    IconChevronRight
+    IconChevronRight,
+    IconBarrierBlock
 } from '@tabler/icons-vue';
 import type { MapMouseEvent } from 'maplibre-gl';
 import { useMapStore } from '../../../src/stores/map.ts';
