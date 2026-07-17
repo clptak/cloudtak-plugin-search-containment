@@ -1,6 +1,23 @@
 <template>
     <MenuTemplate name='Search Containment'>
+        <template #header>
+            <IconBarrierBlock
+                :size='24'
+                stroke='1'
+                class='ms-2 flex-shrink-0'
+            />
+            <span class='strong user-select-none text-break px-2'>Search Containment</span>
+        </template>
         <template #buttons>
+            <TablerIconButton
+                title='Usage'
+                @click='showHelp = true'
+            >
+                <IconInfoCircle
+                    :size='32'
+                    stroke='1'
+                />
+            </TablerIconButton>
             <TablerRefreshButton
                 :loading='loading'
                 @click='reload'
@@ -463,6 +480,127 @@
                     </div>
                 </div>
             </TablerModal>
+
+            <!-- Usage / help modal -->
+            <TablerModal
+                v-if='showHelp'
+                size='lg'
+            >
+                <div class='modal-status bg-blue' />
+                <button
+                    type='button'
+                    class='btn-close'
+                    aria-label='Close'
+                    @click='showHelp = false'
+                />
+                <div class='modal-header text-body'>
+                    <IconBarrierBlock
+                        :size='24'
+                        stroke='1'
+                        class='me-2'
+                    />
+                    <div class='modal-title'>
+                        Search Containment &mdash; Usage
+                    </div>
+                </div>
+                <div
+                    class='modal-body text-body overflow-auto'
+                    style='max-height: 65vh'
+                >
+                    <p>
+                        Pick a source &mdash; a mission shape, a mission line, or a
+                        manually entered point &mdash; and the plugin finds every place
+                        the trail network crosses the resulting boundary, plots
+                        numbered markers, and posts them into the active DataSync
+                        mission.
+                    </p>
+
+                    <h4>1. Pick a source</h4>
+                    <p>
+                        The list shows the active mission's polygons, circles and
+                        lines. <span class='fw-bold'>Shapes</span> go straight to
+                        configuration &mdash; the ring is the boundary offset outward
+                        by the entered distance (0 uses the boundary as-is).
+                        <span class='fw-bold'>Lines</span> ask what the line means:
+                    </p>
+                    <table class='table table-sm'>
+                        <thead>
+                            <tr>
+                                <th>Choice</th>
+                                <th>Behavior</th>
+                                <th>Labels</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class='fw-bold'>
+                                    Containment
+                                </td>
+                                <td>
+                                    Distance offsets a corridor outward from the
+                                    line (0 = the line itself); trail crossings
+                                    are marked and the ring is posted with them
+                                </td>
+                                <td class='text-nowrap'>
+                                    Containment {n}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class='fw-bold'>
+                                    Location Check
+                                </td>
+                                <td>
+                                    The raw line is intersected with the trail
+                                    network directly &mdash; no distance, no
+                                    transform; only markers are posted
+                                </td>
+                                <td class='text-nowrap'>
+                                    Check Location {n}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p>
+                        <span class='fw-bold'>Manual Point</span> (collapsed card at
+                        the bottom of the picker) covers locations not in the
+                        DataSync: type coordinates (DD / DMS / MGRS) or press
+                        <span class='fw-bold'>Select on Map</span> and click the map,
+                        then <span class='fw-bold'>Use This Point</span>. A manual
+                        point gets a range ring at the entered distance.
+                    </p>
+
+                    <h4>2. Configure</h4>
+                    <p>
+                        Distance + units (hidden for Location Check), merge spacing
+                        (crossings closer than this merge into one marker, default
+                        50&nbsp;m), color, and trail network (when more than one
+                        exists). Settings persist per device.
+                    </p>
+
+                    <h4>3. Preview</h4>
+                    <p>
+                        The proposed ring (dashed) and numbered points render on the
+                        map without touching the mission. Go back to adjust, or post.
+                    </p>
+
+                    <h4>4. Post to Mission</h4>
+                    <p>
+                        Markers &mdash; and the ring, when one was generated &mdash;
+                        post to the active DataSync and sync to all subscribers.
+                        Numbering continues from the highest existing number of each
+                        label type in the mission; Location Check markers number in
+                        order along the line, ring crossings clockwise from north.
+                    </p>
+                </div>
+                <div class='modal-footer'>
+                    <button
+                        class='btn btn-primary w-100'
+                        @click='showHelp = false'
+                    >
+                        Close
+                    </button>
+                </div>
+            </TablerModal>
         </template>
     </MenuTemplate>
 </template>
@@ -476,12 +614,14 @@ import {
     TablerNone,
     TablerModal,
     TablerLoading,
+    TablerIconButton,
     TablerRefreshButton
 } from '@tak-ps/vue-tabler';
 import {
     IconLine,
     IconPolygon,
     IconCrosshair,
+    IconInfoCircle,
     IconChevronDown,
     IconChevronRight,
     IconBarrierBlock
@@ -534,6 +674,9 @@ const mode = ref<'containment' | 'check'>('containment');
 
 // Line feature awaiting the Containment / Location Check choice
 const pendingLine = ref<Feature | undefined>();
+
+// Usage / help modal visibility
+const showHelp = ref(false);
 
 const rings = ref<Position[][]>([]);
 const points = ref<Position[]>([]);
