@@ -44,24 +44,23 @@
             <!-- Step 1: pick the source feature -->
             <template v-else-if='stage === "pick"'>
                 <div class='col-12 px-2 py-2 text-secondary small'>
-                    Select a shape from
+                    Select a shape or line from
                     <span
                         class='fw-bold'
                         v-text='missionName'
                     />
-                    to build the containment ring around, or use a Manual
-                    Point below.
+                    to find trail crossings for, or use a Manual Point below.
                 </div>
 
                 <TablerNone
                     v-if='sources.length === 0'
                     :create='false'
-                    label='Eligible Shapes'
+                    label='Eligible Features'
                 >
                     <template #actions>
                         <div class='col-12 px-3 py-2 text-center text-secondary'>
-                            The active mission has no polygons or circles to
-                            build a ring from — use a Manual Point below.
+                            The active mission has no polygons, circles or
+                            lines to work from — use a Manual Point below.
                         </div>
                     </template>
                 </TablerNone>
@@ -80,7 +79,13 @@
                             class='d-flex align-items-center justify-content-center rounded-circle bg-black bg-opacity-25'
                             style='width: 2.5rem; height: 2.5rem; min-width: 2.5rem;'
                         >
+                            <IconLine
+                                v-if='isLineGeometry(feat)'
+                                :size='20'
+                                stroke='1'
+                            />
                             <IconPolygon
+                                v-else
                                 :size='20'
                                 stroke='1'
                             />
@@ -95,7 +100,7 @@
                             />
                             <div
                                 class='text-secondary small'
-                                v-text='"Shape"'
+                                v-text='isLineGeometry(feat) ? "Line" : "Shape"'
                             />
                         </div>
                     </StandardItem>
@@ -184,9 +189,7 @@
                             />
                             <div
                                 class='text-secondary small'
-                                v-text='selected.geometry.type === "Point"
-                                    ? "Range ring around point"
-                                    : "Ring offset outward from boundary"'
+                                v-text='sourceModeLabel'
                             />
                         </div>
                         <div class='ms-auto'>
@@ -353,8 +356,7 @@
                             class='fw-bold'
                             v-text='postedCount'
                         />
-                        containment marker{{ postedCount === 1 ? '' : 's' }} and the
-                        containment ring to
+                        containment marker{{ postedCount === 1 ? '' : 's' }}{{ shouldPostRing ? ' and the containment ring' : '' }} to
                         <span
                             class='fw-bold'
                             v-text='missionName'
@@ -385,6 +387,7 @@ import {
     TablerRefreshButton
 } from '@tak-ps/vue-tabler';
 import {
+    IconLine,
     IconPolygon,
     IconCrosshair,
     IconChevronDown,
@@ -401,6 +404,7 @@ import {
     ringTrailIntersections,
     clusterPoints,
     sortClockwise,
+    sortAlongLine,
     type DistanceUnit
 } from './geometry.ts';
 import {
@@ -437,6 +441,10 @@ const points = ref<Position[]>([]);
 const startNumber = ref(1);
 const postedCount = ref(0);
 
+// False when the source is a mission line used as-is (distance 0):
+// the geometry already exists in the mission, so don't repost it
+const shouldPostRing = ref(true);
+
 const config = ref({
     distance: 1,
     unit: 'miles' as DistanceUnit,
@@ -458,6 +466,22 @@ const distanceValid = computed(() => {
     if (typeof config.value.distance !== 'number' || isNaN(config.value.distance)) return false;
     if (selected.value && selected.value.geometry.type === 'Point') return config.value.distance > 0;
     return config.value.distance >= 0;
+});
+
+function isLineGeometry(feat: Feature): boolean {
+    return ['LineString', 'MultiLineString'].includes(feat.geometry.type);
+}
+
+const sourceModeLabel = computed(() => {
+    if (!selected.value) return '';
+
+    if (selected.value.geometry.type === 'Point') {
+        return 'Range ring around point';
+    } else if (isLineGeometry(selected.value)) {
+        return 'Trail crossings along the line (distance 0 = the line itself)';
+    }
+
+    return 'Ring offset outward from boundary';
 });
 
 onMounted(async () => {
@@ -572,9 +596,9 @@ async function loadSources(refresh = false): Promise<void> {
     // Server rather than trusting the local cache
     const feats = await mapStore.mission.feature.list({ refresh });
 
-    // Shapes only — point sources are handled by the Manual Point entry
+    // Shapes and lines — point sources are handled by the Manual Point entry
     sources.value = feats.filter((feat) => {
-        return ['Polygon', 'MultiPolygon'].includes(feat.geometry.type);
+        return ['Polygon', 'MultiPolygon', 'LineString', 'MultiLineString'].includes(feat.geometry.type);
     });
 }
 
@@ -602,6 +626,9 @@ async function generate(): Promise<void> {
         if (!basemap) throw new Error('No trail network selected');
 
         const distanceKm = toKilometers(config.value.distance, config.value.unit);
+        const lineAsIs = isLineGeometry(selected.value) && distanceKm <= 0;
+
+        shouldPostRing.value = !lineAsIs;
 
         rings.value = buildRings(selected.value.geometry, distanceKm);
 
@@ -610,7 +637,11 @@ async function generate(): Promise<void> {
         const raw = ringTrailIntersections(rings.value, trails);
         const clustered = clusterPoints(raw, config.value.spacing);
 
-        points.value = sortClockwise(clustered);
+        // Number along the drawn line when using it as-is,
+        // otherwise clockwise around the ring
+        points.value = lineAsIs
+            ? sortAlongLine(clustered, rings.value.flat())
+            : sortClockwise(clustered);
 
         startNumber.value = nextContainmentNumber(await mapStore.mission.feature.list());
 
@@ -645,15 +676,17 @@ async function confirm(): Promise<void> {
             ? selected.value.properties.callsign.trim()
             : '';
 
-        for (let i = 0; i < rings.value.length; i++) {
-            const callsign = (sourceName ? sourceName + ' ' : '')
-                + 'Containment Ring'
-                + (rings.value.length > 1 ? ` ${i + 1}` : '');
+        if (shouldPostRing.value) {
+            for (let i = 0; i < rings.value.length; i++) {
+                const callsign = (sourceName ? sourceName + ' ' : '')
+                    + 'Containment Ring'
+                    + (rings.value.length > 1 ? ` ${i + 1}` : '');
 
-            await mapStore.worker.db.add(
-                buildRingFeature(rings.value[i], callsign, config.value.color),
-                { authored: true }
-            );
+                await mapStore.worker.db.add(
+                    buildRingFeature(rings.value[i], callsign, config.value.color),
+                    { authored: true }
+                );
+            }
         }
 
         for (let i = 0; i < points.value.length; i++) {

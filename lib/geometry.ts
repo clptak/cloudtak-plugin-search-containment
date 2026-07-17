@@ -11,6 +11,7 @@ import type {
     Feature as GeoJSONFeature,
     Geometry,
     LineString,
+    MultiLineString,
     MultiPolygon,
     Polygon,
     Position
@@ -29,20 +30,23 @@ export function toKilometers(value: number, unit: DistanceUnit): number {
 }
 
 /**
- * Build the containment ring(s) for a source feature.
+ * Build the containment line(s) for a source feature.
  *
- * - Point   → geodesic circle of radius `distanceKm`
- * - Polygon → boundary buffered OUTWARD by `distanceKm`
+ * - Point      → geodesic circle of radius `distanceKm`
+ * - Polygon    → boundary buffered OUTWARD by `distanceKm`
+ *                (`distanceKm` 0 uses the boundary as-is)
+ * - LineString → the line itself when `distanceKm` is 0, otherwise the
+ *                outline of a corridor `distanceKm` around the line
  *
- * Returns one or more closed rings (each an array of positions where
- * first === last) — a buffered MultiPolygon yields multiple rings.
+ * Returns one or more polylines (closed rings for Point/Polygon
+ * sources; possibly open lines for LineString sources at distance 0).
  */
 export function buildRings(
     geometry: Geometry,
     distanceKm: number
 ): Position[][] {
     if (geometry.type === 'Point') {
-        if (distanceKm <= 0) throw new Error('Distance must be greater than zero for a marker');
+        if (distanceKm <= 0) throw new Error('Distance must be greater than zero for a point');
 
         const circle = Ellipse(geometry.coordinates, distanceKm, distanceKm, {
             angle: 360
@@ -61,6 +65,24 @@ export function buildRings(
         );
 
         if (!buffered) throw new Error('Failed to buffer the selected shape');
+
+        return outerRings(buffered.geometry);
+    } else if (geometry.type === 'LineString' || geometry.type === 'MultiLineString') {
+        const parts = geometry.type === 'LineString'
+            ? [geometry.coordinates]
+            : geometry.coordinates;
+
+        if (distanceKm <= 0) {
+            return parts.map((part) => part.slice());
+        }
+
+        const buffered = buffer(
+            { type: 'Feature', properties: {}, geometry } as GeoJSONFeature<LineString | MultiLineString>,
+            distanceKm,
+            { units: 'kilometers' }
+        );
+
+        if (!buffered) throw new Error('Failed to buffer the selected line');
 
         return outerRings(buffered.geometry);
     }
@@ -182,6 +204,46 @@ export function clusterPoints(
         }
         return [lon / cluster.length, lat / cluster.length];
     });
+}
+
+/**
+ * Sort points by their position along a source polyline so
+ * "Containment 1..n" reads in order from the start of the line.
+ *
+ * Each point is projected onto its nearest segment; the sort key is
+ * (segment index + fractional position along that segment).
+ */
+export function sortAlongLine(points: Position[], line: Position[]): Position[] {
+    if (points.length < 2 || line.length < 2) return points.slice();
+
+    const measure = (pt: Position): number => {
+        let bestD2 = Infinity;
+        let bestM = 0;
+
+        for (let i = 0; i < line.length - 1; i++) {
+            const ax = line[i][0];
+            const ay = line[i][1];
+            const dx = line[i + 1][0] - ax;
+            const dy = line[i + 1][1] - ay;
+
+            const len2 = dx * dx + dy * dy;
+            let t = len2 === 0 ? 0 : ((pt[0] - ax) * dx + (pt[1] - ay) * dy) / len2;
+            t = Math.max(0, Math.min(1, t));
+
+            const ox = ax + t * dx - pt[0];
+            const oy = ay + t * dy - pt[1];
+            const d2 = ox * ox + oy * oy;
+
+            if (d2 < bestD2) {
+                bestD2 = d2;
+                bestM = i + t;
+            }
+        }
+
+        return bestM;
+    };
+
+    return points.slice().sort((a, b) => measure(a) - measure(b));
 }
 
 /**
