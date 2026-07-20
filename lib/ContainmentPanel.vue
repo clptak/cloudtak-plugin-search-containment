@@ -344,7 +344,9 @@
                             tiles={{ trailFetchDebug.tileCount }}
                             zoom={{ trailFetchDebug.zoomUsed }}/{{ trailFetchDebug.requestedZoom }}
                             stepped={{ trailFetchDebug.zoomSteppedDown }}
-                            maxzoom={{ trailFetchDebug.basemapMaxzoom }}]
+                            maxzoom={{ trailFetchDebug.basemapMaxzoom }}
+                            errors={{ trailFetchDebug.fetchErrors ?? 0 }}
+                            probe={{ JSON.stringify(trailFetchDebug.probe || []) }}]
                         </div>
                     </div>
                     <div
@@ -361,7 +363,9 @@
                             tiles={{ trailFetchDebug.tileCount }}
                             zoom={{ trailFetchDebug.zoomUsed }}/{{ trailFetchDebug.requestedZoom }}
                             stepped={{ trailFetchDebug.zoomSteppedDown }}
-                            maxzoom={{ trailFetchDebug.basemapMaxzoom }}]
+                            maxzoom={{ trailFetchDebug.basemapMaxzoom }}
+                            errors={{ trailFetchDebug.fetchErrors ?? 0 }}
+                            probe={{ JSON.stringify(trailFetchDebug.probe || []) }}]
                         </div>
                     </div>
 
@@ -709,6 +713,9 @@ const trailFetchDebug = ref<{
     trailCount: number;
     basemapMaxzoom: number;
     basemapName: string;
+    probe?: Array<{ zoom: number; trails: number; error?: string }>;
+    fetchErrors?: number;
+    sampleUrl?: string;
 } | null>(null);
 const startNumber = ref(1);
 const postedCount = ref(0);
