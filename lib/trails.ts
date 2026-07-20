@@ -53,13 +53,19 @@ export async function listSnappingBasemaps(): Promise<SnappingBasemap[]> {
 
     if (!data || !data.items.length) return [];
 
-    return data.items.map((item) => ({
+    const mapped = data.items.map((item) => ({
         id: item.id,
         name: item.name,
         url: item.url,
         minzoom: item.minzoom ? Number(item.minzoom) : 0,
         maxzoom: item.maxzoom ? Number(item.maxzoom) : 22
     }));
+
+    // #region agent log
+    fetch('http://127.0.0.1:7577/ingest/ddb466b1-f655-482a-963b-be21a6e818b9',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ced233'},body:JSON.stringify({sessionId:'ced233',runId:'pre-fix',hypothesisId:'A',location:'trails.ts:listSnappingBasemaps',message:'snapping basemaps from API',data:{count:mapped.length,basemaps:mapped.map((b)=>({id:b.id,name:b.name,minzoom:b.minzoom,maxzoom:b.maxzoom,rawMaxzoom:data.items.find((i)=>i.id===b.id)?.maxzoom??null,urlHost:(()=>{try{return new URL(b.url).host}catch{return 'bad-url'}})()}))},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+
+    return mapped;
 }
 
 /**
@@ -121,6 +127,42 @@ export async function fetchTrailsAlongRings(
             tiles.set(tile.join('/'), tile as [number, number, number]);
         }
     }
+
+    // #region agent log
+    const ringStats = rings.map((ring) => {
+        let approxLenDeg = 0;
+        for (let i = 1; i < ring.length; i++) {
+            const dx = ring[i][0] - ring[i - 1][0];
+            const dy = ring[i][1] - ring[i - 1][1];
+            approxLenDeg += Math.sqrt(dx * dx + dy * dy);
+        }
+        const first = ring[0];
+        const last = ring[ring.length - 1];
+        return {
+            points: ring.length,
+            approxLenDeg,
+            closed: !!(first && last && first[0] === last[0] && first[1] === last[1]),
+            bbox: ring.reduce((acc, p) => ({
+                minX: Math.min(acc.minX, p[0]), maxX: Math.max(acc.maxX, p[0]),
+                minY: Math.min(acc.minY, p[1]), maxY: Math.max(acc.maxY, p[1]),
+            }), { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity }),
+        };
+    });
+    const countsByZoom: Record<number, number> = {};
+    for (let z = Math.max(0, zoom - 4); z <= zoom; z++) {
+        const m = new Map<string, true>();
+        for (const ring of rings) {
+            const covered = tilecover.tiles({
+                type: 'LineString',
+                coordinates: ring
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            } as any, { min_zoom: z, max_zoom: z });
+            for (const tile of covered) m.set(tile.join('/'), true);
+        }
+        countsByZoom[z] = m.size;
+    }
+    fetch('http://127.0.0.1:7577/ingest/ddb466b1-f655-482a-963b-be21a6e818b9',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ced233'},body:JSON.stringify({sessionId:'ced233',runId:'pre-fix',hypothesisId:'A,B,C,D',location:'trails.ts:fetchTrailsAlongRings',message:'tile cover result',data:{basemap:{name:basemap.name,minzoom:basemap.minzoom,maxzoom:basemap.maxzoom},zoomUsed:zoom,ringCount:rings.length,ringStats,tileCount:tiles.size,maxTiles:MAX_TILES,overCap:tiles.size>MAX_TILES,countsByZoom},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
 
     if (tiles.size === 0) return [];
 

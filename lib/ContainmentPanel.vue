@@ -904,6 +904,10 @@ async function generate(): Promise<void> {
 
         rings.value = buildRings(selected.value.geometry, distanceKm);
 
+        // #region agent log
+        fetch('http://127.0.0.1:7577/ingest/ddb466b1-f655-482a-963b-be21a6e818b9',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ced233'},body:JSON.stringify({sessionId:'ced233',runId:'pre-fix',hypothesisId:'B,E',location:'ContainmentPanel.vue:generate',message:'generate inputs before trail fetch',data:{mode:mode.value,distance:config.value.distance,unit:config.value.unit,distanceKm,geomType:selected.value.geometry.type,basemapName:basemap.name,basemapMaxzoom:basemap.maxzoom,basemapMinzoom:basemap.minzoom,ringCount:rings.value.length,ringPointCounts:rings.value.map((r)=>r.length),lineAsIs},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+
         const trails = await fetchTrailsAlongRings(basemap, rings.value);
 
         const raw = ringTrailIntersections(rings.value, trails);
