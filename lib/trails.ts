@@ -15,8 +15,9 @@ import type { Feature as GeoJSONFeature, FeatureCollection as GeoJSONFeatureColl
 
 /**
  * Hard cap on tile fetches per run. Tile count scales with ring
- * circumference (we only cover the ring line, not its interior), so
- * this is only hit with an unreasonably large ring / high maxzoom.
+ * circumference (we only cover the ring line, not its interior).
+ * When maxzoom would exceed this, we step zoom down until under the
+ * cap (same geometry, coarser trail tiles) instead of failing outright.
  */
 const MAX_TILES = 400;
 
@@ -29,6 +30,33 @@ export interface SnappingBasemap {
     url: string;
     minzoom: number;
     maxzoom: number;
+}
+
+/**
+ * Enumerate tiles covering ring LineStrings at a single zoom.
+ */
+function coverRingsAtZoom(
+    rings: Position[][],
+    zoom: number
+): Map<string, [number, number, number]> {
+    const tiles = new Map<string, [number, number, number]>();
+
+    for (const ring of rings) {
+        const covered = tilecover.tiles({
+            type: 'LineString',
+            coordinates: ring
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any, {
+            min_zoom: zoom,
+            max_zoom: zoom
+        });
+
+        for (const tile of covered) {
+            tiles.set(tile.join('/'), tile as [number, number, number]);
+        }
+    }
+
+    return tiles;
 }
 
 /**
@@ -104,28 +132,24 @@ async function tileFeaturesURL(
  *
  * Only tiles intersecting the ring lines are fetched — interior tiles
  * are skipped entirely, so cost scales with ring length, not area.
+ *
+ * Starts at the basemap maxzoom (best trail fidelity). If that would
+ * exceed MAX_TILES, zoom is stepped down until the cover fits — large
+ * SAR rings stay usable even when the tileset reports a high maxzoom.
  */
 export async function fetchTrailsAlongRings(
     basemap: SnappingBasemap,
     rings: Position[][]
 ): Promise<Array<GeoJSONFeature<LineString>>> {
-    const zoom = Math.min(basemap.maxzoom, 22);
+    const requestedZoom = Math.min(basemap.maxzoom, 22);
+    const floorZoom = Math.max(0, Math.min(basemap.minzoom || 0, requestedZoom));
 
-    const tiles = new Map<string, [number, number, number]>();
+    let zoom = requestedZoom;
+    let tiles = coverRingsAtZoom(rings, zoom);
 
-    for (const ring of rings) {
-        const covered = tilecover.tiles({
-            type: 'LineString',
-            coordinates: ring
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } as any, {
-            min_zoom: zoom,
-            max_zoom: zoom
-        });
-
-        for (const tile of covered) {
-            tiles.set(tile.join('/'), tile as [number, number, number]);
-        }
+    while (tiles.size > MAX_TILES && zoom > floorZoom) {
+        zoom -= 1;
+        tiles = coverRingsAtZoom(rings, zoom);
     }
 
     // #region agent log
@@ -149,21 +173,14 @@ export async function fetchTrailsAlongRings(
         };
     });
     const countsByZoom: Record<number, number> = {};
-    for (let z = Math.max(0, zoom - 4); z <= zoom; z++) {
-        const m = new Map<string, true>();
-        for (const ring of rings) {
-            const covered = tilecover.tiles({
-                type: 'LineString',
-                coordinates: ring
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            } as any, { min_zoom: z, max_zoom: z });
-            for (const tile of covered) m.set(tile.join('/'), true);
-        }
-        countsByZoom[z] = m.size;
+    for (let z = Math.max(floorZoom, requestedZoom - 6); z <= requestedZoom; z++) {
+        countsByZoom[z] = coverRingsAtZoom(rings, z).size;
     }
     const debugPayload = {
         basemap: { name: basemap.name, minzoom: basemap.minzoom, maxzoom: basemap.maxzoom },
+        requestedZoom,
         zoomUsed: zoom,
+        zoomSteppedDown: zoom < requestedZoom,
         ringCount: rings.length,
         ringStats,
         tileCount: tiles.size,
@@ -171,21 +188,20 @@ export async function fetchTrailsAlongRings(
         overCap: tiles.size > MAX_TILES,
         countsByZoom,
     };
-    fetch('http://127.0.0.1:7577/ingest/ddb466b1-f655-482a-963b-be21a6e818b9',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ced233'},body:JSON.stringify({sessionId:'ced233',runId:'pre-fix',hypothesisId:'A,B,C,D',location:'trails.ts:fetchTrailsAlongRings',message:'tile cover result',data:debugPayload,timestamp:Date.now()})}).catch(()=>{});
+    fetch('http://127.0.0.1:7577/ingest/ddb466b1-f655-482a-963b-be21a6e818b9',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ced233'},body:JSON.stringify({sessionId:'ced233',runId:'post-fix',hypothesisId:'A',location:'trails.ts:fetchTrailsAlongRings',message:'tile cover result after adaptive zoom',data:debugPayload,timestamp:Date.now()})}).catch(()=>{});
     try { console.warn('[search-containment debug]', JSON.stringify(debugPayload)); } catch { /* ignore */ }
     // #endregion
 
     if (tiles.size === 0) return [];
 
     if (tiles.size > MAX_TILES) {
-        // Include diagnostics in the UI error — remote HTTPS cannot reach local ingest.
         throw new Error(
-            `Containment ring covers ${tiles.size} tiles (max ${MAX_TILES}). `
+            `Containment ring covers ${tiles.size} tiles (max ${MAX_TILES}) `
+            + `even at zoom ${zoom}. `
             + 'Reduce the distance or use a smaller shape. '
-            + `[debug zoom=${zoom} basemapMaxzoom=${basemap.maxzoom} rings=${rings.length} `
-            + `countsByZoom=${JSON.stringify(countsByZoom)} `
-            + `ringPoints=${ringStats.map((r) => r.points).join(',')} `
-            + `approxLenDeg=${ringStats.map((r) => r.approxLenDeg.toFixed(4)).join(',')}]`
+            + `[debug requestedZoom=${requestedZoom} zoomUsed=${zoom} `
+            + `basemapMaxzoom=${basemap.maxzoom} rings=${rings.length} `
+            + `countsByZoom=${JSON.stringify(countsByZoom)}]`
         );
     }
 
