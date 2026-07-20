@@ -76,7 +76,9 @@ function coverRingsAtZoom(
 
 /**
  * List basemaps flagged for snapping (vector, S3/MinIO hosted).
- * Mirrors `draw.ts populateSnappingLayers()`.
+ * Mirrors `draw.ts populateSnappingLayers()`, then corrects min/maxzoom
+ * from each basemap's TileJSON — the DB row often reports maxzoom 22
+ * while the hosted PMTiles archive tops out lower (e.g. 14).
  */
 export async function listSnappingBasemaps(): Promise<SnappingBasemap[]> {
     const { data } = await server.GET('/api/basemap', {
@@ -96,16 +98,48 @@ export async function listSnappingBasemaps(): Promise<SnappingBasemap[]> {
 
     if (!data || !data.items.length) return [];
 
-    const mapped = data.items.map((item) => ({
-        id: item.id,
-        name: item.name,
-        url: item.url,
-        minzoom: item.minzoom ? Number(item.minzoom) : 0,
-        maxzoom: item.maxzoom != null ? Number(item.maxzoom) : 14
+    const debugRows: Array<{ id: number; name: string; dbMax: number; tilejsonMax: number | null; maxzoom: number }> = [];
+
+    const mapped = await Promise.all(data.items.map(async (item) => {
+        const dbMin = item.minzoom != null ? Number(item.minzoom) : 0;
+        const dbMax = item.maxzoom != null ? Number(item.maxzoom) : 14;
+        let minzoom = dbMin;
+        let maxzoom = dbMax;
+        let tilejsonMax: number | null = null;
+
+        try {
+            const tj = await server.GET('/api/basemap/{:basemapid}/tiles', {
+                params: {
+                    path: {
+                        ':basemapid': item.id
+                    }
+                }
+            });
+            if (tj.data?.maxzoom != null) {
+                tilejsonMax = Number(tj.data.maxzoom);
+                maxzoom = tilejsonMax;
+            }
+            if (tj.data?.minzoom != null) {
+                minzoom = Number(tj.data.minzoom);
+            }
+        } catch {
+            // Fall back to DB zooms if TileJSON is unavailable
+        }
+
+        debugRows.push({ id: item.id, name: item.name, dbMax, tilejsonMax, maxzoom });
+
+        return {
+            id: item.id,
+            name: item.name,
+            url: item.url,
+            minzoom,
+            maxzoom
+        };
     }));
 
     // #region agent log
-    fetch('http://127.0.0.1:7577/ingest/ddb466b1-f655-482a-963b-be21a6e818b9',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ced233'},body:JSON.stringify({sessionId:'ced233',runId:'post-fix-v3',hypothesisId:'G',location:'trails.ts:listSnappingBasemaps',message:'snapping basemaps from API',data:{count:mapped.length,basemaps:mapped.map((b)=>({id:b.id,name:b.name,minzoom:b.minzoom,maxzoom:b.maxzoom,rawMaxzoom:data.items.find((i)=>i.id===b.id)?.maxzoom??null}))},timestamp:Date.now()})}).catch(()=>{});
+    fetch('http://127.0.0.1:7577/ingest/ddb466b1-f655-482a-963b-be21a6e818b9',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ced233'},body:JSON.stringify({sessionId:'ced233',runId:'post-fix-v4',hypothesisId:'G',location:'trails.ts:listSnappingBasemaps',message:'snapping basemaps with tilejson zoom',data:{count:mapped.length,basemaps:debugRows},timestamp:Date.now()})}).catch(()=>{});
+    try { console.warn('[search-containment debug basemaps]', JSON.stringify(debugRows)); } catch { /* ignore */ }
     // #endregion
 
     return mapped;
