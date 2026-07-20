@@ -161,15 +161,31 @@ export async function fetchTrailsAlongRings(
         }
         countsByZoom[z] = m.size;
     }
-    fetch('http://127.0.0.1:7577/ingest/ddb466b1-f655-482a-963b-be21a6e818b9',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ced233'},body:JSON.stringify({sessionId:'ced233',runId:'pre-fix',hypothesisId:'A,B,C,D',location:'trails.ts:fetchTrailsAlongRings',message:'tile cover result',data:{basemap:{name:basemap.name,minzoom:basemap.minzoom,maxzoom:basemap.maxzoom},zoomUsed:zoom,ringCount:rings.length,ringStats,tileCount:tiles.size,maxTiles:MAX_TILES,overCap:tiles.size>MAX_TILES,countsByZoom},timestamp:Date.now()})}).catch(()=>{});
+    const debugPayload = {
+        basemap: { name: basemap.name, minzoom: basemap.minzoom, maxzoom: basemap.maxzoom },
+        zoomUsed: zoom,
+        ringCount: rings.length,
+        ringStats,
+        tileCount: tiles.size,
+        maxTiles: MAX_TILES,
+        overCap: tiles.size > MAX_TILES,
+        countsByZoom,
+    };
+    fetch('http://127.0.0.1:7577/ingest/ddb466b1-f655-482a-963b-be21a6e818b9',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ced233'},body:JSON.stringify({sessionId:'ced233',runId:'pre-fix',hypothesisId:'A,B,C,D',location:'trails.ts:fetchTrailsAlongRings',message:'tile cover result',data:debugPayload,timestamp:Date.now()})}).catch(()=>{});
+    try { console.warn('[search-containment debug]', JSON.stringify(debugPayload)); } catch { /* ignore */ }
     // #endregion
 
     if (tiles.size === 0) return [];
 
     if (tiles.size > MAX_TILES) {
+        // Include diagnostics in the UI error — remote HTTPS cannot reach local ingest.
         throw new Error(
             `Containment ring covers ${tiles.size} tiles (max ${MAX_TILES}). `
-            + 'Reduce the distance or use a smaller shape.'
+            + 'Reduce the distance or use a smaller shape. '
+            + `[debug zoom=${zoom} basemapMaxzoom=${basemap.maxzoom} rings=${rings.length} `
+            + `countsByZoom=${JSON.stringify(countsByZoom)} `
+            + `ringPoints=${ringStats.map((r) => r.points).join(',')} `
+            + `approxLenDeg=${ringStats.map((r) => r.approxLenDeg.toFixed(4)).join(',')}]`
         );
     }
 
