@@ -336,6 +336,16 @@
                     >
                         No trail crossings were found on the ring. You can still
                         post the ring itself, or go back and adjust the distance.
+                        <div
+                            v-if='trailFetchDebug'
+                            class='small mt-2 font-monospace'
+                        >
+                            [debug trails={{ trailFetchDebug.trailCount }}
+                            tiles={{ trailFetchDebug.tileCount }}
+                            zoom={{ trailFetchDebug.zoomUsed }}/{{ trailFetchDebug.requestedZoom }}
+                            stepped={{ trailFetchDebug.zoomSteppedDown }}
+                            maxzoom={{ trailFetchDebug.basemapMaxzoom }}]
+                        </div>
                     </div>
                     <div
                         v-else
@@ -343,6 +353,16 @@
                     >
                         No trail crossings were found along the line. Go back
                         and adjust the merge spacing or pick a different line.
+                        <div
+                            v-if='trailFetchDebug'
+                            class='small mt-2 font-monospace'
+                        >
+                            [debug trails={{ trailFetchDebug.trailCount }}
+                            tiles={{ trailFetchDebug.tileCount }}
+                            zoom={{ trailFetchDebug.zoomUsed }}/{{ trailFetchDebug.requestedZoom }}
+                            stepped={{ trailFetchDebug.zoomSteppedDown }}
+                            maxzoom={{ trailFetchDebug.basemapMaxzoom }}]
+                        </div>
                     </div>
 
                     <div
@@ -643,6 +663,7 @@ import {
 import {
     listSnappingBasemaps,
     fetchTrailsAlongRings,
+    lastTrailFetchDebug as readLastTrailFetchDebug,
     type SnappingBasemap
 } from './trails.ts';
 import {
@@ -680,6 +701,15 @@ const showHelp = ref(false);
 
 const rings = ref<Position[][]>([]);
 const points = ref<Position[]>([]);
+const trailFetchDebug = ref<{
+    requestedZoom: number;
+    zoomUsed: number;
+    zoomSteppedDown: boolean;
+    tileCount: number;
+    trailCount: number;
+    basemapMaxzoom: number;
+    basemapName: string;
+} | null>(null);
 const startNumber = ref(1);
 const postedCount = ref(0);
 
@@ -909,6 +939,13 @@ async function generate(): Promise<void> {
         // #endregion
 
         const trails = await fetchTrailsAlongRings(basemap, rings.value);
+        trailFetchDebug.value = readLastTrailFetchDebug
+            ? { ...readLastTrailFetchDebug }
+            : null;
+
+        // #region agent log
+        fetch('http://127.0.0.1:7577/ingest/ddb466b1-f655-482a-963b-be21a6e818b9',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ced233'},body:JSON.stringify({sessionId:'ced233',runId:'post-fix-v2',hypothesisId:'F',location:'ContainmentPanel.vue:generate',message:'after trail fetch',data:{trailCount:trails.length,rawWillCompute:true,fetchDebug:trailFetchDebug.value},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
 
         const raw = ringTrailIntersections(rings.value, trails);
         const clustered = clusterPoints(raw, config.value.spacing);

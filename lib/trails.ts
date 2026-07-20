@@ -14,15 +14,15 @@ import { std, server } from '../../../src/std.ts';
 import type { Feature as GeoJSONFeature, FeatureCollection as GeoJSONFeatureCollection, LineString, Position } from 'geojson';
 
 /**
- * Hard cap on tile fetches per run. Tile count scales with ring
- * circumference (we only cover the ring line, not its interior).
- * When maxzoom would exceed this, we step zoom down until under the
- * cap (same geometry, coarser trail tiles) instead of failing outright.
+ * Soft cap on tile fetches per run. Prefer the basemap maxzoom for trail
+ * fidelity; only step zoom down when a ring would exceed this. (A 400-tile
+ * cap was too tight for typical SAR rings once tilesets report higher
+ * maxzoom — e.g. ~2200 tiles at maxzoom with empty geometry one level down.)
  */
-const MAX_TILES = 400;
+const MAX_TILES = 3000;
 
 /** Parallel fetch batch size */
-const BATCH_SIZE = 8;
+const BATCH_SIZE = 16;
 
 export interface SnappingBasemap {
     id: number;
@@ -31,6 +31,17 @@ export interface SnappingBasemap {
     minzoom: number;
     maxzoom: number;
 }
+
+/** Last fetch diagnostics (for UI when crossings are empty). */
+export let lastTrailFetchDebug: {
+    requestedZoom: number;
+    zoomUsed: number;
+    zoomSteppedDown: boolean;
+    tileCount: number;
+    trailCount: number;
+    basemapMaxzoom: number;
+    basemapName: string;
+} | null = null;
 
 /**
  * Enumerate tiles covering ring LineStrings at a single zoom.
@@ -188,11 +199,22 @@ export async function fetchTrailsAlongRings(
         overCap: tiles.size > MAX_TILES,
         countsByZoom,
     };
-    fetch('http://127.0.0.1:7577/ingest/ddb466b1-f655-482a-963b-be21a6e818b9',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ced233'},body:JSON.stringify({sessionId:'ced233',runId:'post-fix',hypothesisId:'A',location:'trails.ts:fetchTrailsAlongRings',message:'tile cover result after adaptive zoom',data:debugPayload,timestamp:Date.now()})}).catch(()=>{});
+    fetch('http://127.0.0.1:7577/ingest/ddb466b1-f655-482a-963b-be21a6e818b9',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ced233'},body:JSON.stringify({sessionId:'ced233',runId:'post-fix-v2',hypothesisId:'F',location:'trails.ts:fetchTrailsAlongRings',message:'tile cover before feature fetch',data:debugPayload,timestamp:Date.now()})}).catch(()=>{});
     try { console.warn('[search-containment debug]', JSON.stringify(debugPayload)); } catch { /* ignore */ }
     // #endregion
 
-    if (tiles.size === 0) return [];
+    if (tiles.size === 0) {
+        lastTrailFetchDebug = {
+            requestedZoom,
+            zoomUsed: zoom,
+            zoomSteppedDown: zoom < requestedZoom,
+            tileCount: 0,
+            trailCount: 0,
+            basemapMaxzoom: basemap.maxzoom,
+            basemapName: basemap.name,
+        };
+        return [];
+    }
 
     if (tiles.size > MAX_TILES) {
         throw new Error(
@@ -205,11 +227,11 @@ export async function fetchTrailsAlongRings(
         );
     }
 
-    const queue = Array.from(tiles.values());
+    const list = Array.from(tiles.values());
     const features: Array<GeoJSONFeature<LineString>> = [];
 
-    for (let i = 0; i < queue.length; i += BATCH_SIZE) {
-        const batch = queue.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < list.length; i += BATCH_SIZE) {
+        const batch = list.slice(i, i + BATCH_SIZE);
 
         const results = await Promise.all(batch.map(async ([x, y, z]) => {
             const url = await tileFeaturesURL(basemap.url, x, y, z);
@@ -230,6 +252,21 @@ export async function fetchTrailsAlongRings(
             }
         }
     }
+
+    lastTrailFetchDebug = {
+        requestedZoom,
+        zoomUsed: zoom,
+        zoomSteppedDown: zoom < requestedZoom,
+        tileCount: tiles.size,
+        trailCount: features.length,
+        basemapMaxzoom: basemap.maxzoom,
+        basemapName: basemap.name,
+    };
+
+    // #region agent log
+    fetch('http://127.0.0.1:7577/ingest/ddb466b1-f655-482a-963b-be21a6e818b9',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ced233'},body:JSON.stringify({sessionId:'ced233',runId:'post-fix-v2',hypothesisId:'F',location:'trails.ts:fetchTrailsAlongRings:done',message:'feature fetch complete',data:lastTrailFetchDebug,timestamp:Date.now()})}).catch(()=>{});
+    try { console.warn('[search-containment debug fetch-done]', JSON.stringify(lastTrailFetchDebug)); } catch { /* ignore */ }
+    // #endregion
 
     return features;
 }
