@@ -31,22 +31,6 @@ export interface SnappingBasemap {
     maxzoom: number;
 }
 
-export type TrailFetchDebug = {
-    requestedZoom: number;
-    zoomUsed: number;
-    zoomSteppedDown: boolean;
-    tileCount: number;
-    trailCount: number;
-    basemapMaxzoom: number;
-    basemapName: string;
-    probe?: Array<{ zoom: number; trails: number; error?: string }>;
-    fetchErrors?: number;
-    sampleUrl?: string;
-};
-
-/** Last fetch diagnostics (for UI when crossings are empty). */
-export let lastTrailFetchDebug: TrailFetchDebug | null = null;
-
 /**
  * Enumerate tiles covering ring LineStrings at a single zoom.
  */
@@ -98,14 +82,9 @@ export async function listSnappingBasemaps(): Promise<SnappingBasemap[]> {
 
     if (!data || !data.items.length) return [];
 
-    const debugRows: Array<{ id: number; name: string; dbMax: number; tilejsonMax: number | null; maxzoom: number }> = [];
-
-    const mapped = await Promise.all(data.items.map(async (item) => {
-        const dbMin = item.minzoom != null ? Number(item.minzoom) : 0;
-        const dbMax = item.maxzoom != null ? Number(item.maxzoom) : 14;
-        let minzoom = dbMin;
-        let maxzoom = dbMax;
-        let tilejsonMax: number | null = null;
+    return await Promise.all(data.items.map(async (item) => {
+        let minzoom = item.minzoom != null ? Number(item.minzoom) : 0;
+        let maxzoom = item.maxzoom != null ? Number(item.maxzoom) : 14;
 
         try {
             const tj = await server.GET('/api/basemap/{:basemapid}/tiles', {
@@ -115,18 +94,11 @@ export async function listSnappingBasemaps(): Promise<SnappingBasemap[]> {
                     }
                 }
             });
-            if (tj.data?.maxzoom != null) {
-                tilejsonMax = Number(tj.data.maxzoom);
-                maxzoom = tilejsonMax;
-            }
-            if (tj.data?.minzoom != null) {
-                minzoom = Number(tj.data.minzoom);
-            }
+            if (tj.data?.maxzoom != null) maxzoom = Number(tj.data.maxzoom);
+            if (tj.data?.minzoom != null) minzoom = Number(tj.data.minzoom);
         } catch {
             // Fall back to DB zooms if TileJSON is unavailable
         }
-
-        debugRows.push({ id: item.id, name: item.name, dbMax, tilejsonMax, maxzoom });
 
         return {
             id: item.id,
@@ -136,13 +108,6 @@ export async function listSnappingBasemaps(): Promise<SnappingBasemap[]> {
             maxzoom
         };
     }));
-
-    // #region agent log
-    fetch('http://127.0.0.1:7577/ingest/ddb466b1-f655-482a-963b-be21a6e818b9',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ced233'},body:JSON.stringify({sessionId:'ced233',runId:'post-fix-v4',hypothesisId:'G',location:'trails.ts:listSnappingBasemaps',message:'snapping basemaps with tilejson zoom',data:{count:mapped.length,basemaps:debugRows},timestamp:Date.now()})}).catch(()=>{});
-    try { console.warn('[search-containment debug basemaps]', JSON.stringify(debugRows)); } catch { /* ignore */ }
-    // #endregion
-
-    return mapped;
 }
 
 /**
@@ -180,23 +145,18 @@ async function fetchTileFeatures(
     x: number,
     y: number,
     z: number
-): Promise<{ features: Array<GeoJSONFeature<LineString>>; error?: string; url: string }> {
+): Promise<Array<GeoJSONFeature<LineString>>> {
     const url = await tileFeaturesURL(basemap.url, x, y, z);
+
     try {
         const fc = await std(url) as GeoJSONFeatureCollection<LineString>;
-        const features: Array<GeoJSONFeature<LineString>> = [];
-        for (const feat of fc.features || []) {
-            if (feat.geometry && feat.geometry.type === 'LineString') {
-                features.push(feat);
-            }
-        }
-        return { features, url: url.toString().replace(/token=[^&]+/, 'token=…') };
+
+        return (fc.features || []).filter((feat) => {
+            return feat.geometry && feat.geometry.type === 'LineString';
+        });
     } catch (err) {
-        return {
-            features: [],
-            error: err instanceof Error ? err.message : String(err),
-            url: url.toString().replace(/token=[^&]+/, 'token=…'),
-        };
+        console.error(`Search Containment: failed to fetch tile ${z}/${x}/${y}`, err);
+        return [];
     }
 }
 
@@ -211,60 +171,18 @@ async function probeDataZoom(
     rings: Position[][],
     fromZoom: number,
     floorZoom: number
-): Promise<{ zoom: number | null; probe: NonNullable<TrailFetchDebug['probe']>; sampleUrl?: string }> {
-    const probe: NonNullable<TrailFetchDebug['probe']> = [];
-    let sampleUrl: string | undefined;
-    let found: number | null = null;
-
+): Promise<number | null> {
     for (let z = fromZoom; z >= floorZoom; z--) {
         const covered = coverRingsAtZoom(rings, z);
         const first = covered.values().next().value as [number, number, number] | undefined;
-
-        if (!first) {
-            probe.push({ zoom: z, trails: 0, error: 'no-tile' });
-            continue;
-        }
+        if (!first) continue;
 
         const [x, y, tz] = first;
-        const result = await fetchTileFeatures(basemap, x, y, tz);
-        if (!sampleUrl) sampleUrl = result.url;
-        probe.push({
-            zoom: z,
-            trails: result.features.length,
-            error: result.error,
-        });
-
-        if (result.features.length > 0) {
-            found = z;
-            break;
-        }
+        const features = await fetchTileFeatures(basemap, x, y, tz);
+        if (features.length > 0) return z;
     }
 
-    return { zoom: found, probe, sampleUrl };
-}
-
-async function fetchAllTiles(
-    basemap: SnappingBasemap,
-    tiles: Map<string, [number, number, number]>
-): Promise<{ features: Array<GeoJSONFeature<LineString>>; fetchErrors: number }> {
-    const list = Array.from(tiles.values());
-    const features: Array<GeoJSONFeature<LineString>> = [];
-    let fetchErrors = 0;
-
-    for (let i = 0; i < list.length; i += BATCH_SIZE) {
-        const batch = list.slice(i, i + BATCH_SIZE);
-
-        const results = await Promise.all(batch.map(async ([x, y, z]) => {
-            return fetchTileFeatures(basemap, x, y, z);
-        }));
-
-        for (const result of results) {
-            if (result.error) fetchErrors += 1;
-            features.push(...result.features);
-        }
-    }
-
-    return { features, fetchErrors };
+    return null;
 }
 
 /**
@@ -285,104 +203,42 @@ export async function fetchTrailsAlongRings(
     const requestedZoom = Math.min(basemap.maxzoom, 22);
     const floorZoom = Math.max(0, Math.min(basemap.minzoom || 0, requestedZoom));
 
-    if (!rings.length || !rings[0]?.length) {
-        lastTrailFetchDebug = {
-            requestedZoom,
-            zoomUsed: requestedZoom,
-            zoomSteppedDown: false,
-            tileCount: 0,
-            trailCount: 0,
-            basemapMaxzoom: basemap.maxzoom,
-            basemapName: basemap.name,
-        };
-        return [];
-    }
+    if (!rings.length || !rings[0]?.length) return [];
 
-    const probed = await probeDataZoom(basemap, rings, requestedZoom, floorZoom);
+    const dataZoom = await probeDataZoom(basemap, rings, requestedZoom, floorZoom);
+    if (dataZoom == null) return [];
 
-    if (probed.zoom == null) {
-        lastTrailFetchDebug = {
-            requestedZoom,
-            zoomUsed: requestedZoom,
-            zoomSteppedDown: false,
-            tileCount: 0,
-            trailCount: 0,
-            basemapMaxzoom: basemap.maxzoom,
-            basemapName: basemap.name,
-            probe: probed.probe,
-            sampleUrl: probed.sampleUrl,
-            fetchErrors: probed.probe.filter((p) => p.error).length,
-        };
-        return [];
-    }
-
-    let zoom = probed.zoom;
-
+    let zoom = dataZoom;
     let tiles = coverRingsAtZoom(rings, zoom);
+
     while (tiles.size > MAX_TILES && zoom > floorZoom) {
         zoom -= 1;
         tiles = coverRingsAtZoom(rings, zoom);
     }
 
-    // #region agent log
-    const debugPayload = {
-        basemap: { name: basemap.name, minzoom: basemap.minzoom, maxzoom: basemap.maxzoom },
-        requestedZoom,
-        probedZoom: probed.zoom,
-        zoomUsed: zoom,
-        probe: probed.probe,
-        tileCount: tiles.size,
-        maxTiles: MAX_TILES,
-        sampleUrl: probed.sampleUrl,
-    };
-    fetch('http://127.0.0.1:7577/ingest/ddb466b1-f655-482a-963b-be21a6e818b9',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ced233'},body:JSON.stringify({sessionId:'ced233',runId:'post-fix-v3',hypothesisId:'G',location:'trails.ts:fetchTrailsAlongRings',message:'probe + cover',data:debugPayload,timestamp:Date.now()})}).catch(()=>{});
-    try { console.warn('[search-containment debug]', JSON.stringify(debugPayload)); } catch { /* ignore */ }
-    // #endregion
-
-    if (tiles.size === 0) {
-        lastTrailFetchDebug = {
-            requestedZoom,
-            zoomUsed: zoom,
-            zoomSteppedDown: zoom < requestedZoom,
-            tileCount: 0,
-            trailCount: 0,
-            basemapMaxzoom: basemap.maxzoom,
-            basemapName: basemap.name,
-            probe: probed.probe,
-            sampleUrl: probed.sampleUrl,
-        };
-        return [];
-    }
+    if (tiles.size === 0) return [];
 
     if (tiles.size > MAX_TILES) {
         throw new Error(
             `Containment ring covers ${tiles.size} tiles (max ${MAX_TILES}) `
-            + `even at zoom ${zoom}. `
-            + 'Reduce the distance or use a smaller shape. '
-            + `[debug requestedZoom=${requestedZoom} zoomUsed=${zoom} `
-            + `basemapMaxzoom=${basemap.maxzoom} probe=${JSON.stringify(probed.probe)}]`
+            + `even at zoom ${zoom}. Reduce the distance or use a smaller shape.`
         );
     }
 
-    const { features, fetchErrors } = await fetchAllTiles(basemap, tiles);
+    const list = Array.from(tiles.values());
+    const features: Array<GeoJSONFeature<LineString>> = [];
 
-    lastTrailFetchDebug = {
-        requestedZoom,
-        zoomUsed: zoom,
-        zoomSteppedDown: zoom < requestedZoom,
-        tileCount: tiles.size,
-        trailCount: features.length,
-        basemapMaxzoom: basemap.maxzoom,
-        basemapName: basemap.name,
-        probe: probed.probe,
-        fetchErrors,
-        sampleUrl: probed.sampleUrl,
-    };
+    for (let i = 0; i < list.length; i += BATCH_SIZE) {
+        const batch = list.slice(i, i + BATCH_SIZE);
 
-    // #region agent log
-    fetch('http://127.0.0.1:7577/ingest/ddb466b1-f655-482a-963b-be21a6e818b9',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ced233'},body:JSON.stringify({sessionId:'ced233',runId:'post-fix-v3',hypothesisId:'G',location:'trails.ts:fetchTrailsAlongRings:done',message:'feature fetch complete',data:lastTrailFetchDebug,timestamp:Date.now()})}).catch(()=>{});
-    try { console.warn('[search-containment debug fetch-done]', JSON.stringify(lastTrailFetchDebug)); } catch { /* ignore */ }
-    // #endregion
+        const results = await Promise.all(batch.map(async ([x, y, z]) => {
+            return fetchTileFeatures(basemap, x, y, z);
+        }));
+
+        for (const result of results) {
+            features.push(...result);
+        }
+    }
 
     return features;
 }
