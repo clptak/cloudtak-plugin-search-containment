@@ -650,7 +650,11 @@ import {
     buildContainmentMarker,
     buildRingFeature
 } from './markers.ts';
-import { ensureContainmentFolder } from './folder.ts';
+import {
+    ensureContainmentFolder,
+    withMissionFolderDest,
+    attachFeaturesToFolder
+} from './folder.ts';
 
 const SETTINGS_KEY = 'search-containment:settings';
 const PREVIEW_SOURCE = 'search-containment-preview';
@@ -960,6 +964,10 @@ async function confirm(): Promise<void> {
     error.value = '';
 
     try {
+        // Folder must exist before publish so dest.path can reference its UID
+        const folder = await ensureContainmentFolder(mapStore.mission);
+        const missionGuid = mapStore.mission.guid;
+
         // Re-check numbering at post time in case the mission changed
         startNumber.value = nextLabelNumber(await mapStore.mission.feature.list(), labelPrefix.value);
 
@@ -969,32 +977,61 @@ async function confirm(): Promise<void> {
 
         const postedUids: string[] = [];
 
+        /**
+         * Publish into the mission folder:
+         * 1. sendCOT with dest.path = folder UID (atomic filing; ETL pattern)
+         * 2. local mission store via db.add authored:false + Mission origin
+         *    (avoids SubscriptionFeature.update overwriting dest without path)
+         */
+        async function publishToFolder(feat: Feature): Promise<void> {
+            const wire = withMissionFolderDest(feat, missionGuid, folder.uid);
+            mapStore.worker.conn.sendCOT(wire);
+
+            await mapStore.worker.db.add({
+                ...feat,
+                origin: {
+                    mode: 'Mission',
+                    mode_id: missionGuid
+                }
+            }, { authored: false });
+
+            postedUids.push(String(feat.id));
+        }
+
         if (shouldPostRing.value) {
             for (let i = 0; i < rings.value.length; i++) {
                 const callsign = (sourceName ? sourceName + ' ' : '')
                     + 'Containment Ring'
                     + (rings.value.length > 1 ? ` ${i + 1}` : '');
 
-                const feat = buildRingFeature(rings.value[i], callsign, config.value.color);
-                await mapStore.worker.db.add(feat, { authored: true });
-                postedUids.push(String(feat.id));
+                await publishToFolder(
+                    buildRingFeature(rings.value[i], callsign, config.value.color)
+                );
             }
         }
 
         for (let i = 0; i < points.value.length; i++) {
-            const feat = buildContainmentMarker(
-                points.value[i],
-                startNumber.value + i,
-                config.value.color,
-                labelPrefix.value
+            await publishToFolder(
+                buildContainmentMarker(
+                    points.value[i],
+                    startNumber.value + i,
+                    config.value.color,
+                    labelPrefix.value
+                )
             );
-            await mapStore.worker.db.add(feat, { authored: true });
-            postedUids.push(String(feat.id));
         }
 
+        // Backup: move any UIDs still at mission root (if dest.path was ignored)
         if (postedUids.length) {
-            const folder = await ensureContainmentFolder(mapStore.mission);
-            await mapStore.mission.layer.attachFeatures(folder.uid, postedUids);
+            try {
+                await attachFeaturesToFolder(mapStore.mission, folder.uid, postedUids);
+            } catch (attachErr) {
+                // Features are already on the mission; folder filing is best-effort backup
+                console.warn(attachErr);
+                error.value = attachErr instanceof Error
+                    ? attachErr.message
+                    : String(attachErr);
+            }
         }
 
         await mapStore.refresh();
