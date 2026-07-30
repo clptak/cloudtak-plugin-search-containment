@@ -102,35 +102,69 @@ export async function attachFeaturesToFolder(
     const initialDelayMs = opts?.initialDelayMs ?? 800;
     const attempts = opts?.attempts ?? 6;
 
+    // #region agent log
+    fetch('http://127.0.0.1:7577/ingest/ddb466b1-f655-482a-963b-be21a6e818b9',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'753dc7'},body:JSON.stringify({sessionId:'753dc7',runId:'pre-fix',hypothesisId:'A,B,E',location:'folder.ts:attachFeaturesToFolder:start',message:'attach batch start',data:{folderUid,uidCount:uids.length,initialDelayMs,attempts,firstUids:uids.slice(0,3),lastUids:uids.slice(-3)},timestamp:Date.now()})}).catch(()=>{});
+    console.warn('[containment-debug] attach start', { folderUid, uidCount: uids.length, initialDelayMs, attempts });
+    // #endregion
+
     await sleep(initialDelayMs);
 
     const failed: string[] = [];
+    const succeeded: string[] = [];
+    const failDetails: Array<{ uid: string; attemptsUsed: number; error: string }> = [];
 
-    for (const uid of uids) {
+    for (let index = 0; index < uids.length; index++) {
+        const uid = uids[index];
         let ok = false;
         let lastErr: unknown;
+        let attemptsUsed = 0;
 
         for (let i = 0; i < attempts; i++) {
+            attemptsUsed = i + 1;
             try {
                 await sub.layer.attachFeatures(folderUid, [uid]);
                 ok = true;
                 break;
             } catch (err) {
                 lastErr = err;
+                // #region agent log
+                if (i === attempts - 1 || i === 0) {
+                    fetch('http://127.0.0.1:7577/ingest/ddb466b1-f655-482a-963b-be21a6e818b9',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'753dc7'},body:JSON.stringify({sessionId:'753dc7',runId:'pre-fix',hypothesisId:'A,B',location:'folder.ts:attachFeaturesToFolder:attempt',message:'attach attempt failed',data:{uid,index,attempt:i+1,attempts,error:err instanceof Error?err.message:String(err)},timestamp:Date.now()})}).catch(()=>{});
+                }
+                // #endregion
                 await sleep(300 * (i + 1));
             }
         }
 
         if (!ok) {
             failed.push(uid);
+            const error = lastErr instanceof Error ? lastErr.message : String(lastErr);
+            failDetails.push({ uid, attemptsUsed, error });
             console.warn('Failed to attach feature to mission folder', uid, lastErr);
+            // #region agent log
+            fetch('http://127.0.0.1:7577/ingest/ddb466b1-f655-482a-963b-be21a6e818b9',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'753dc7'},body:JSON.stringify({sessionId:'753dc7',runId:'pre-fix',hypothesisId:'A,B,E',location:'folder.ts:attachFeaturesToFolder:uid-failed',message:'attach uid exhausted retries',data:{uid,index,attemptsUsed,error,total:uids.length},timestamp:Date.now()})}).catch(()=>{});
+            console.warn('[containment-debug] attach FAILED', { uid, index, attemptsUsed, error });
+            // #endregion
+        } else {
+            succeeded.push(uid);
+            // #region agent log
+            if (attemptsUsed > 1 || index < 2 || index >= uids.length - 2) {
+                fetch('http://127.0.0.1:7577/ingest/ddb466b1-f655-482a-963b-be21a6e818b9',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'753dc7'},body:JSON.stringify({sessionId:'753dc7',runId:'pre-fix',hypothesisId:'A,B',location:'folder.ts:attachFeaturesToFolder:uid-ok',message:'attach uid ok',data:{uid,index,attemptsUsed,total:uids.length},timestamp:Date.now()})}).catch(()=>{});
+            }
+            // #endregion
         }
     }
+
+    // #region agent log
+    fetch('http://127.0.0.1:7577/ingest/ddb466b1-f655-482a-963b-be21a6e818b9',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'753dc7'},body:JSON.stringify({sessionId:'753dc7',runId:'pre-fix',hypothesisId:'A,B,D,E',location:'folder.ts:attachFeaturesToFolder:summary',message:'attach batch summary',data:{ok:succeeded.length,failed:failed.length,total:uids.length,failDetails,failedIndexes:failed.map((u)=>uids.indexOf(u))},timestamp:Date.now()})}).catch(()=>{});
+    console.warn('[containment-debug] attach summary', { ok: succeeded.length, failed: failed.length, failDetails, failedIndexes: failed.map((u) => uids.indexOf(u)) });
+    // #endregion
 
     if (failed.length) {
         throw new Error(
             `Posted to mission but could not file ${failed.length}/${uids.length} `
             + `into "${CONTAINMENT_FOLDER}" (they may still be at mission root)`
+            + ` [debug indexes: ${failed.map((u) => uids.indexOf(u)).join(',')}]`
         );
     }
 }

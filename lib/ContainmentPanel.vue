@@ -969,6 +969,17 @@ async function confirm(): Promise<void> {
         const folder = await ensureContainmentFolder(mapStore.mission);
         const missionGuid = mapStore.mission.guid;
 
+        // #region agent log
+        let wsOpen: boolean | string = 'unknown';
+        try {
+            wsOpen = await mapStore.worker.conn.isOpen;
+        } catch (e) {
+            wsOpen = `err:${e instanceof Error ? e.message : String(e)}`;
+        }
+        fetch('http://127.0.0.1:7577/ingest/ddb466b1-f655-482a-963b-be21a6e818b9',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'753dc7'},body:JSON.stringify({sessionId:'753dc7',runId:'pre-fix',hypothesisId:'C',location:'ContainmentPanel.vue:confirm:start',message:'confirm start',data:{folderUid:folder.uid,missionGuid,wsOpen,pointCount:points.value.length,ringCount:rings.value.length,shouldPostRing:shouldPostRing.value},timestamp:Date.now()})}).catch(()=>{});
+        console.warn('[containment-debug] confirm start', { folderUid: folder.uid, wsOpen, points: points.value.length, rings: rings.value.length });
+        // #endregion
+
         // Re-check numbering at post time in case the mission changed
         startNumber.value = nextLabelNumber(await mapStore.mission.feature.list(), labelPrefix.value);
 
@@ -984,8 +995,12 @@ async function confirm(): Promise<void> {
          * 2. local mission store via db.add authored:false + Mission origin
          *    (avoids SubscriptionFeature.update overwriting dest without path)
          */
-        async function publishToFolder(feat: Feature): Promise<void> {
+        async function publishToFolder(feat: Feature, kind: string): Promise<void> {
             const wire = withMissionFolderDest(feat, missionGuid, folder.uid);
+            // #region agent log
+            const wsOpenUnknown = true;
+            fetch('http://127.0.0.1:7577/ingest/ddb466b1-f655-482a-963b-be21a6e818b9',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'753dc7'},body:JSON.stringify({sessionId:'753dc7',runId:'pre-fix',hypothesisId:'C,D',location:'ContainmentPanel.vue:publishToFolder',message:'publish feature',data:{kind,uid:String(feat.id),callsign:typeof feat.properties.callsign==='string'?feat.properties.callsign:'',folderUid:folder.uid,index:postedUids.length,hasDestPath:!!(wire.properties.dest&&Array.isArray(wire.properties.dest)),wsOpenUnknown},timestamp:Date.now()})}).catch(()=>{});
+            // #endregion
             mapStore.worker.conn.sendCOT(wire);
 
             await mapStore.worker.db.add({
@@ -1006,7 +1021,8 @@ async function confirm(): Promise<void> {
                     + (rings.value.length > 1 ? ` ${i + 1}` : '');
 
                 await publishToFolder(
-                    buildRingFeature(rings.value[i], callsign, config.value.color)
+                    buildRingFeature(rings.value[i], callsign, config.value.color),
+                    'ring'
                 );
             }
         }
@@ -1018,9 +1034,15 @@ async function confirm(): Promise<void> {
                     startNumber.value + i,
                     config.value.color,
                     labelPrefix.value
-                )
+                ),
+                'marker'
             );
         }
+
+        // #region agent log
+        fetch('http://127.0.0.1:7577/ingest/ddb466b1-f655-482a-963b-be21a6e818b9',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'753dc7'},body:JSON.stringify({sessionId:'753dc7',runId:'pre-fix',hypothesisId:'C,D',location:'ContainmentPanel.vue:confirm:published',message:'all features published',data:{postedCount:postedUids.length,ringCount:shouldPostRing.value?rings.value.length:0,markerCount:points.value.length,folderUid:folder.uid,missionGuid},timestamp:Date.now()})}).catch(()=>{});
+        console.warn('[containment-debug] published', { postedCount: postedUids.length, rings: shouldPostRing.value ? rings.value.length : 0, markers: points.value.length });
+        // #endregion
 
         // Backup: move any UIDs still at mission root (if dest.path was ignored)
         if (postedUids.length) {
