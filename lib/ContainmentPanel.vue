@@ -606,7 +606,7 @@
 </template>
 
 <script setup lang='ts'>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import MenuTemplate from '../../../src/components/CloudTAK/util/MenuTemplate.vue';
 import StandardItem from '../../../src/components/CloudTAK/util/StandardItem.vue';
 import Coordinate from '../../../src/components/CloudTAK/util/Coordinate.vue';
@@ -650,6 +650,7 @@ import {
     buildContainmentMarker,
     buildRingFeature
 } from './markers.ts';
+import { ensureContainmentFolder } from './folder.ts';
 
 const SETTINGS_KEY = 'search-containment:settings';
 const PREVIEW_SOURCE = 'search-containment-preview';
@@ -731,6 +732,24 @@ const sourceModeLabel = computed(() => {
 
     return 'Ring offset outward from boundary';
 });
+
+/**
+ * Soft-ensure the Containment mission folder when an active DataSync is present.
+ * Lack of write permission must not block configuration.
+ */
+async function softEnsureFolder(): Promise<void> {
+    if (!mapStore.mission) return;
+
+    try {
+        await ensureContainmentFolder(mapStore.mission);
+    } catch (err) {
+        console.warn('Failed to ensure Containment mission folder', err);
+    }
+}
+
+watch(mission, () => {
+    void softEnsureFolder();
+}, { immediate: true });
 
 onMounted(async () => {
     await restoreSettings();
@@ -948,24 +967,34 @@ async function confirm(): Promise<void> {
             ? selected.value.properties.callsign.trim()
             : '';
 
+        const postedUids: string[] = [];
+
         if (shouldPostRing.value) {
             for (let i = 0; i < rings.value.length; i++) {
                 const callsign = (sourceName ? sourceName + ' ' : '')
                     + 'Containment Ring'
                     + (rings.value.length > 1 ? ` ${i + 1}` : '');
 
-                await mapStore.worker.db.add(
-                    buildRingFeature(rings.value[i], callsign, config.value.color),
-                    { authored: true }
-                );
+                const feat = buildRingFeature(rings.value[i], callsign, config.value.color);
+                await mapStore.worker.db.add(feat, { authored: true });
+                postedUids.push(String(feat.id));
             }
         }
 
         for (let i = 0; i < points.value.length; i++) {
-            await mapStore.worker.db.add(
-                buildContainmentMarker(points.value[i], startNumber.value + i, config.value.color, labelPrefix.value),
-                { authored: true }
+            const feat = buildContainmentMarker(
+                points.value[i],
+                startNumber.value + i,
+                config.value.color,
+                labelPrefix.value
             );
+            await mapStore.worker.db.add(feat, { authored: true });
+            postedUids.push(String(feat.id));
+        }
+
+        if (postedUids.length) {
+            const folder = await ensureContainmentFolder(mapStore.mission);
+            await mapStore.mission.layer.attachFeatures(folder.uid, postedUids);
         }
 
         await mapStore.refresh();
