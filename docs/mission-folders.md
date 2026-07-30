@@ -2,141 +2,152 @@
 
 How to create a folder in an active DataSync mission and file CoTs into it from a CloudTAK web plugin.
 
-Reference implementation: [`lib/folder.ts`](../lib/folder.ts) and `confirm()` in [`lib/ContainmentPanel.vue`](../lib/ContainmentPanel.vue).
+**Reference implementation in this repo:**
+
+- [`lib/folder.ts`](../lib/folder.ts) — ensure folder, dest helpers, delayed attach backup
+- [`lib/ContainmentPanel.vue`](../lib/ContainmentPanel.vue) — `softEnsureFolder()` + `confirm()` / `publishToFolder()`
 
 ## Concepts
 
 | Term | Meaning |
 |------|---------|
-| **Mission folder** | A **UID** mission layer (`Subscription.layer`) — what Mission → Layers shows as a folder |
+| **Mission folder** | A **UID** mission layer (`Subscription.layer`) — Mission → Layers |
 | **Feature `path`** | Profile / My Features path (often `'/'`) — **not** the mission folder |
-| **Dest `path`** | On CoT `properties.dest[]`, `path` is the **mission layer UID** (atomic filing on ingest) |
-| **attachFeatures** | Move mission CoT UIDs under a layer after they already exist in the mission |
+| **Dest `path`** | On CoT `properties.dest[]`, `path` is the **mission layer UID** (files on ingest) |
+| **attachFeatures** | Move existing mission CoT UIDs under a layer (racy if called too soon) |
 
-Use `type: 'UID'` for folders that hold map CoTs. TAK only returns filed UIDs for UID layers, not `GROUP`.
+Always use `type: 'UID'`. TAK only returns filed UIDs for UID layers, not `GROUP`. Folders are created at mission root unless you pass `parentUid`.
 
-## Why attach-only often 500s
+## What went wrong with attach-only
 
-`worker.db.add(feat, { authored: true })` publishes over the websocket, then
-`SubscriptionFeature.update` sets dest to `{ 'mission-guid' }` **only** — no folder.
+Earlier approach:
 
-If you immediately call `layer.attachFeatures`, TAK often returns **500 Internal Server Error** because the CoT is not in mission contents yet. The folder is created, markers sit at mission root.
+1. `worker.db.add(feat, { authored: true })` → websocket publish
+2. `SubscriptionFeature.update` sets `dest: [{ 'mission-guid' }]` **with no folder**
+3. Immediate `layer.attachFeatures(folderUid, uids)` → TAK **500** (CoT not in mission contents yet)
 
-**Prefer dest `path` at send time.** Use `attachFeatures` only as a delayed backup.
+Result: folder created, ring/markers stuck at mission root. CloudTAK also surfaces those 500s as JSON toasts.
 
-## Prerequisites
+**Current approach:** file with dest `path` at send time; use delayed per-UID `attachFeatures` only as backup.
 
-- Active DataSync: `useMapStore().mission` is a `Subscription`
-- `MISSION_WRITE` (create/attach fail without it)
-- For attach backup: UIDs must already be in the mission
+## End-to-end flow (this plugin)
 
-## Client API
-
-```ts
-import type Subscription from '../../../src/base/subscription.ts';
-import type { MissionLayer } from '../../../src/types.ts';
-
-const sub = useMapStore().mission; // Subscription | undefined
+```mermaid
+sequenceDiagram
+    participant Panel as ContainmentPanel
+    participant Folder as folder.ts
+    participant Conn as worker.conn.sendCOT
+    participant DB as worker.db.add
+    participant Layer as subscription.layer
+    Note over Panel: Active mission present
+    Panel->>Folder: ensureContainmentFolder (soft on open)
+    Note over Panel: User clicks Post to Mission
+    Panel->>Folder: ensureContainmentFolder (hard)
+    loop Each ring and marker
+        Panel->>Conn: sendCOT with dest.path = folder.uid
+        Panel->>DB: add with origin Mission, authored false
+    end
+    Panel->>Folder: attachFeaturesToFolder (delay + retries)
 ```
 
-| Method | Purpose |
-|--------|---------|
-| `sub.layer.list({ refresh?: boolean })` | List root layers |
-| `sub.layer.create({ name, type: 'UID', uid?, parentUid? })` | Create folder |
-| `sub.layer.attachFeatures(layerUid, uids)` | File existing mission CoTs (racy if called too soon) |
-| `mapStore.worker.conn.sendCOT(feat)` | Publish GeoJSON CoT (preserves `dest.path`) |
+## Helpers exported from `lib/folder.ts`
 
-## Pattern: ensure folder by name
+| Export | Role |
+|--------|------|
+| `CONTAINMENT_FOLDER` | Display name `"Containment"` |
+| `findLayerByName(layers, name)` | Top-level name match |
+| `ensureContainmentFolder(sub)` | List → reuse or `create({ name, type: 'UID' })` → re-list for `uid` |
+| `missionFolderDest(guid, folderUid)` | `[{ 'mission-guid', path: folderUid, after: '' }]` |
+| `withMissionFolderDest(feat, guid, folderUid)` | Deep-clone feature with that dest |
+| `attachFeaturesToFolder(sub, folderUid, uids)` | 800ms delay, then per-UID attach with up to 6 retries |
+| `sleep(ms)` | Shared delay helper |
 
-```ts
-const FOLDER_NAME = 'MyPlugin';
+Do **not** trust `layer.create()`’s return value alone (TAKItem-wrapped). Re-list and find by name.
 
-async function ensureMissionFolder(sub: Subscription, name = FOLDER_NAME): Promise<MissionLayer> {
-    let layers = await sub.layer.list({ refresh: true });
-    const existing = layers.find((l) => l.name === name);
-    if (existing) return existing;
+## Soft-ensure when mission is active
 
-    await sub.layer.create({ name, type: 'UID' });
-    layers = await sub.layer.list(); // create() already refreshed Dexie
-    const created = layers.find((l) => l.name === name);
-    if (!created) throw new Error(`Failed to create "${name}" mission folder`);
-    return created;
-}
-```
-
-Soft-ensure on panel open (do not block UI if write fails):
+In `ContainmentPanel.vue`: watch active mission; create folder if missing; failures only `console.warn` so missing write permission does not block the panel.
 
 ```ts
-watch(() => mapStore.mission, async (m) => {
-    if (!m) return;
-    try { await ensureMissionFolder(m); }
-    catch (err) { console.warn('Failed to ensure mission folder', err); }
-}, { immediate: true });
-```
-
-## Pattern: post into folder (recommended)
-
-1. Ensure folder → get `folder.uid`
-2. `sendCOT` with `dest: [{ 'mission-guid', path: folder.uid, after: '' }]`
-3. Local mission store **without** a second network publish that strips `path`:
-   `db.add({ ...feat, origin: { mode: 'Mission', mode_id: guid } }, { authored: false })`
-4. Optional backup: delay, then `attachFeatures` one UID at a time with retries
-
-```ts
-async function publishToFolder(feat: Feature, sub: Subscription, folderUid: string): Promise<void> {
-    const wire = JSON.parse(JSON.stringify(feat));
-    wire.properties.dest = [{
-        'mission-guid': sub.guid,
-        path: folderUid,  // layer UID
-        after: ''
-    }];
-    mapStore.worker.conn.sendCOT(wire);
-
-    // Local only — authored:true would re-send dest without path
-    await mapStore.worker.db.add({
-        ...feat,
-        origin: { mode: 'Mission', mode_id: sub.guid }
-    }, { authored: false });
-}
-```
-
-Do **not** leave Feature GeoJSON `path: '/'` alone as the folder mechanism — that is the profile path field.
-
-## Pattern: attach backup (after ingest)
-
-```ts
-async function attachWithRetry(sub: Subscription, folderUid: string, uids: string[]): Promise<void> {
-    await new Promise((r) => setTimeout(r, 800)); // let TAK ingest websocket CoTs
-
-    for (const uid of uids) {
-        let ok = false;
-        for (let i = 0; i < 6 && !ok; i++) {
-            try {
-                await sub.layer.attachFeatures(folderUid, [uid]);
-                ok = true;
-            } catch {
-                await new Promise((r) => setTimeout(r, 300 * (i + 1)));
-            }
-        }
-        if (!ok) console.warn('attach failed', uid);
+async function softEnsureFolder(): Promise<void> {
+    if (!mapStore.mission) return;
+    try {
+        await ensureContainmentFolder(mapStore.mission);
+    } catch (err) {
+        console.warn('Failed to ensure Containment mission folder', err);
     }
 }
+
+watch(mission, () => { void softEnsureFolder(); }, { immediate: true });
 ```
 
-Avoid `feature.list({ refresh: true })` in the wait loop right after local `db.add` — refresh replaces Dexie from the server and can briefly wipe features that are not ingested yet.
+## Post to Mission (`confirm`)
 
-## Checklist for another plugin
+```ts
+import { OriginMode } from '../../../src/base/cot.ts';
+import {
+    ensureContainmentFolder,
+    withMissionFolderDest,
+    attachFeaturesToFolder
+} from './folder.ts';
 
-1. Stable folder name (e.g. `"Containment"`).
-2. Ensure UID layer before publish.
-3. Publish with `dest.path = folder.uid` via `conn.sendCOT`.
-4. Local store with `origin: { mode: 'Mission', mode_id }` and `authored: false`.
-5. Optional: delayed per-UID `attachFeatures` backup.
-6. Soft-ensure on mission active is fine; hard-fail only on user Post if create fails.
+const folder = await ensureContainmentFolder(mapStore.mission);
+const missionGuid = mapStore.mission.guid;
+const postedUids: string[] = [];
+
+async function publishToFolder(feat: Feature): Promise<void> {
+    // 1. Network: dest.path = layer UID (atomic filing; same idea as ETL)
+    const wire = withMissionFolderDest(feat, missionGuid, folder.uid);
+    mapStore.worker.conn.sendCOT(wire);
+
+    // 2. Local mission store only — authored:true would re-send dest without path
+    await mapStore.worker.db.add({
+        ...feat,
+        origin: { mode: OriginMode.MISSION, mode_id: missionGuid }
+    }, { authored: false });
+
+    postedUids.push(String(feat.id));
+}
+
+// ... buildRingFeature / buildContainmentMarker → publishToFolder(...)
+
+// 3. Backup if dest.path was ignored (best-effort; Post still succeeds)
+try {
+    await attachFeaturesToFolder(mapStore.mission, folder.uid, postedUids);
+} catch (attachErr) {
+    console.warn(attachErr);
+    error.value = attachErr instanceof Error ? attachErr.message : String(attachErr);
+}
+```
+
+### Why not `db.add(..., { authored: true })` for folder filing?
+
+That path goes through `SubscriptionFeature.update`, which **overwrites** `dest` to `{ 'mission-guid' }` only. Folder is lost. Send with `conn.sendCOT` + local `authored: false` avoids that.
+
+Leave Feature GeoJSON `path: '/'` as-is — that is not the mission folder.
+
+## Attach backup details
+
+`attachFeaturesToFolder`:
+
+- Initial delay **800ms** (websocket ingest is async)
+- One UID at a time (matches Mission → Layers drag-drop)
+- Up to **6** attempts, backoff `300 * (i + 1)` ms
+- Partial failure → throws; panel shows message that some items may remain at mission root
+
+Do **not** poll with `feature.list({ refresh: true })` right after local add — refresh replaces Dexie from the server and can wipe features not yet ingested.
+
+## Copying into another plugin
+
+1. Copy [`lib/folder.ts`](../lib/folder.ts) (or rename `CONTAINMENT_FOLDER` / `ensureContainmentFolder`).
+2. Soft-ensure on active mission.
+3. On write: ensure folder → `withMissionFolderDest` + `sendCOT` → `db.add` with `OriginMode.MISSION` / `authored: false`.
+4. Call `attachFeaturesToFolder` as delayed backup; treat attach failure as warning, not a failed post.
+5. Lint from host: `cd ~/CloudTAK/api/web && npx eslint --config eslint.config.js ./plugins/<slug>/`
 
 ## Related CloudTAK sources
 
-- `api/web/src/base/subscription-layer.ts` — list/create/attachFeatures
+- `api/web/src/base/subscription-layer.ts` — list / create / attachFeatures
 - `api/stateless/routes/connection-layer-cot.ts` — `cot.addDest({ mission, path: layerUid })`
 - `api/stateful/lib/connection-web.ts` — `CoTParser.from_geojson` preserves dest
-- Mission UI: Mission → Layers (drag feature onto folder = attachFeatures)
+- Mission UI: Mission → Layers (drag onto folder = attachFeatures)

@@ -629,6 +629,7 @@ import {
 import type { MapMouseEvent } from 'maplibre-gl';
 import { useMapStore } from '../../../src/stores/map.ts';
 import KV from '../../../src/base/kv.ts';
+import { OriginMode } from '../../../src/base/cot.ts';
 import type { Feature } from '../../../src/types.ts';
 import type { Position } from 'geojson';
 import {
@@ -990,7 +991,7 @@ async function confirm(): Promise<void> {
             await mapStore.worker.db.add({
                 ...feat,
                 origin: {
-                    mode: 'Mission',
+                    mode: OriginMode.MISSION,
                     mode_id: missionGuid
                 }
             }, { authored: false });
