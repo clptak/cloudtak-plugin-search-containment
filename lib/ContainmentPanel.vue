@@ -970,14 +970,21 @@ async function confirm(): Promise<void> {
         const missionGuid = mapStore.mission.guid;
 
         // #region agent log
+        // Console-only: remote CloudTAK CSP blocks localhost debug ingest
         let wsOpen: boolean | string = 'unknown';
         try {
             wsOpen = await mapStore.worker.conn.isOpen;
         } catch (e) {
             wsOpen = `err:${e instanceof Error ? e.message : String(e)}`;
         }
-        fetch('http://127.0.0.1:7577/ingest/ddb466b1-f655-482a-963b-be21a6e818b9',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'753dc7'},body:JSON.stringify({sessionId:'753dc7',runId:'pre-fix',hypothesisId:'C',location:'ContainmentPanel.vue:confirm:start',message:'confirm start',data:{folderUid:folder.uid,missionGuid,wsOpen,pointCount:points.value.length,ringCount:rings.value.length,shouldPostRing:shouldPostRing.value},timestamp:Date.now()})}).catch(()=>{});
-        console.warn('[containment-debug] confirm start', { folderUid: folder.uid, wsOpen, points: points.value.length, rings: rings.value.length });
+        console.warn('[containment-debug] confirm start', {
+            folderUid: folder.uid,
+            missionGuid,
+            wsOpen,
+            points: points.value.length,
+            rings: rings.value.length,
+            shouldPostRing: shouldPostRing.value
+        });
         // #endregion
 
         // Re-check numbering at post time in case the mission changed
@@ -997,10 +1004,6 @@ async function confirm(): Promise<void> {
          */
         async function publishToFolder(feat: Feature, kind: string): Promise<void> {
             const wire = withMissionFolderDest(feat, missionGuid, folder.uid);
-            // #region agent log
-            const wsOpenUnknown = true;
-            fetch('http://127.0.0.1:7577/ingest/ddb466b1-f655-482a-963b-be21a6e818b9',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'753dc7'},body:JSON.stringify({sessionId:'753dc7',runId:'pre-fix',hypothesisId:'C,D',location:'ContainmentPanel.vue:publishToFolder',message:'publish feature',data:{kind,uid:String(feat.id),callsign:typeof feat.properties.callsign==='string'?feat.properties.callsign:'',folderUid:folder.uid,index:postedUids.length,hasDestPath:!!(wire.properties.dest&&Array.isArray(wire.properties.dest)),wsOpenUnknown},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion
             mapStore.worker.conn.sendCOT(wire);
 
             await mapStore.worker.db.add({
@@ -1012,6 +1015,16 @@ async function confirm(): Promise<void> {
             }, { authored: false });
 
             postedUids.push(String(feat.id));
+            // #region agent log
+            if (postedUids.length <= 2 || kind === 'ring') {
+                console.warn('[containment-debug] publish', {
+                    kind,
+                    uid: String(feat.id),
+                    index: postedUids.length - 1,
+                    callsign: typeof feat.properties.callsign === 'string' ? feat.properties.callsign : ''
+                });
+            }
+            // #endregion
         }
 
         if (shouldPostRing.value) {
@@ -1040,8 +1053,11 @@ async function confirm(): Promise<void> {
         }
 
         // #region agent log
-        fetch('http://127.0.0.1:7577/ingest/ddb466b1-f655-482a-963b-be21a6e818b9',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'753dc7'},body:JSON.stringify({sessionId:'753dc7',runId:'pre-fix',hypothesisId:'C,D',location:'ContainmentPanel.vue:confirm:published',message:'all features published',data:{postedCount:postedUids.length,ringCount:shouldPostRing.value?rings.value.length:0,markerCount:points.value.length,folderUid:folder.uid,missionGuid},timestamp:Date.now()})}).catch(()=>{});
-        console.warn('[containment-debug] published', { postedCount: postedUids.length, rings: shouldPostRing.value ? rings.value.length : 0, markers: points.value.length });
+        console.warn('[containment-debug] published', {
+            postedCount: postedUids.length,
+            rings: shouldPostRing.value ? rings.value.length : 0,
+            markers: points.value.length
+        });
         // #endregion
 
         // Backup: move any UIDs still at mission root (if dest.path was ignored)
