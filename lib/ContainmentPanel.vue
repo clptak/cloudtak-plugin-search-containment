@@ -607,7 +607,7 @@
 
 <script setup lang='ts'>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
-import MenuTemplate from '../../../src/components/CloudTAK/util/MenuTemplate.vue';
+import MenuTemplate from './MenuTemplate.vue';
 import StandardItem from '../../../src/components/CloudTAK/util/StandardItem.vue';
 import Coordinate from '../../../src/components/CloudTAK/util/Coordinate.vue';
 import {
