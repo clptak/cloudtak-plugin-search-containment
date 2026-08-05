@@ -430,61 +430,71 @@
                             />
                         </div>
                     </div>
-                    <div class='modal-body text-body'>
+                    <div class='modal-body text-body help-modal'>
                         <div class='d-flex flex-column gap-2'>
-                            <StandardItem
-                                class='d-flex align-items-center gap-3 p-2'
+                            <TablerBorder
+                                class='cloudtak-bg text-white cursor-pointer'
+                                :fill-height='false'
+                                :shadow='false'
+                                gap='sm'
                                 @click='chooseLineMode("containment")'
                             >
-                                <div
-                                    class='d-flex align-items-center justify-content-center rounded-circle bg-black bg-opacity-25'
-                                    style='width: 2.5rem; height: 2.5rem; min-width: 2.5rem;'
-                                >
-                                    <IconBarrierBlock
-                                        :size='20'
-                                        stroke='1'
-                                    />
-                                </div>
-                                <div
-                                    class='d-flex flex-column'
-                                    style='min-width: 0'
-                                >
-                                    <div class='fw-bold'>
-                                        Containment
+                                <div class='d-flex align-items-center gap-3'>
+                                    <div
+                                        class='d-flex align-items-center justify-content-center rounded-circle bg-black bg-opacity-25'
+                                        style='width: 2.5rem; height: 2.5rem; min-width: 2.5rem;'
+                                    >
+                                        <IconBarrierBlock
+                                            :size='20'
+                                            stroke='1'
+                                        />
                                     </div>
-                                    <div class='text-secondary small'>
-                                        Offset a ring from the line by a distance
-                                        (0 = the line itself) and mark trail
-                                        crossings as Containment points
+                                    <div
+                                        class='d-flex flex-column'
+                                        style='min-width: 0'
+                                    >
+                                        <div class='fw-bold'>
+                                            Containment
+                                        </div>
+                                        <div class='text-secondary small'>
+                                            Offset a ring from the line by a distance
+                                            (0 = the line itself) and mark trail
+                                            crossings as Containment points
+                                        </div>
                                     </div>
                                 </div>
-                            </StandardItem>
-                            <StandardItem
-                                class='d-flex align-items-center gap-3 p-2'
+                            </TablerBorder>
+                            <TablerBorder
+                                class='cloudtak-bg text-white cursor-pointer'
+                                :fill-height='false'
+                                :shadow='false'
+                                gap='sm'
                                 @click='chooseLineMode("check")'
                             >
-                                <div
-                                    class='d-flex align-items-center justify-content-center rounded-circle bg-black bg-opacity-25'
-                                    style='width: 2.5rem; height: 2.5rem; min-width: 2.5rem;'
-                                >
-                                    <IconCrosshair
-                                        :size='20'
-                                        stroke='1'
-                                    />
-                                </div>
-                                <div
-                                    class='d-flex flex-column'
-                                    style='min-width: 0'
-                                >
-                                    <div class='fw-bold'>
-                                        Location Check
+                                <div class='d-flex align-items-center gap-3'>
+                                    <div
+                                        class='d-flex align-items-center justify-content-center rounded-circle bg-black bg-opacity-25'
+                                        style='width: 2.5rem; height: 2.5rem; min-width: 2.5rem;'
+                                    >
+                                        <IconCrosshair
+                                            :size='20'
+                                            stroke='1'
+                                        />
                                     </div>
-                                    <div class='text-secondary small'>
-                                        Mark every point where this line crosses
-                                        the trail network as "Check Location"
+                                    <div
+                                        class='d-flex flex-column'
+                                        style='min-width: 0'
+                                    >
+                                        <div class='fw-bold'>
+                                            Location Check
+                                        </div>
+                                        <div class='text-secondary small'>
+                                            Mark every point where this line crosses
+                                            the trail network as "Check Location"
+                                        </div>
                                     </div>
                                 </div>
-                            </StandardItem>
+                            </TablerBorder>
                         </div>
                     </div>
                 </TablerModal>
@@ -512,93 +522,118 @@
                         </div>
                     </div>
                     <div
-                        class='modal-body text-body overflow-auto'
+                        class='modal-body text-body overflow-auto help-modal'
                         style='max-height: 65vh'
                     >
-                        <p>
-                            Pick a source &mdash; a mission shape, a mission line, or a
-                            manually entered point &mdash; and the plugin finds every place
-                            the trail network crosses the resulting boundary, plots
-                            numbered markers, and posts them into the active DataSync
-                            mission.
-                        </p>
+                        <TablerInlineAlert
+                            severity='info'
+                            title='Search Containment'
+                            description='Pick a source — a mission shape, a mission line, or a manually entered point — and the plugin finds every place the trail network crosses the resulting boundary, plots numbered markers, and posts them into the active DataSync mission.'
+                        />
 
-                        <h4>1. Pick a source</h4>
-                        <p>
-                            The list shows the active mission's polygons, circles and
-                            lines. <span class='fw-bold'>Shapes</span> go straight to
-                            configuration &mdash; the ring is the boundary offset outward
-                            by the entered distance (0 uses the boundary as-is).
-                            <span class='fw-bold'>Lines</span> ask what the line means:
-                        </p>
-                        <table class='table table-sm'>
-                            <thead>
-                                <tr>
-                                    <th>Choice</th>
-                                    <th>Behavior</th>
-                                    <th>Labels</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td class='fw-bold'>
+                        <TablerBorder
+                            class='cloudtak-bg text-white mt-3'
+                            :fill-height='false'
+                            gap='sm'
+                        >
+                            <template #label>
+                                <p class='text-uppercase text-white-50 small mb-0'>
+                                    Pick A Source
+                                </p>
+                            </template>
+                            <p class='mb-2'>
+                                The list shows the active mission's polygons, circles and
+                                lines. <span class='fw-bold'>Shapes</span> go straight to
+                                configuration — the ring is the boundary offset outward
+                                by the entered distance (0 uses the boundary as-is).
+                                <span class='fw-bold'>Lines</span> ask what the line means.
+                            </p>
+                            <p class='mb-0'>
+                                <span class='fw-bold'>Manual Point</span> (collapsed card at
+                                the bottom of the picker) covers locations not in the
+                                DataSync: type coordinates (DD / DMS / MGRS) or press
+                                <span class='fw-bold'>Select on Map</span> and click the map,
+                                then <span class='fw-bold'>Use This Point</span>. A manual
+                                point gets a range ring at the entered distance.
+                            </p>
+                        </TablerBorder>
+
+                        <TablerBorder
+                            class='cloudtak-bg text-white mt-3'
+                            :fill-height='false'
+                            gap='sm'
+                        >
+                            <template #label>
+                                <p class='text-uppercase text-white-50 small mb-0'>
+                                    Line Modes
+                                </p>
+                            </template>
+                            <div class='d-flex flex-column gap-2'>
+                                <div class='cloudtak-accent border rounded-3 text-white px-2 py-2'>
+                                    <div class='fw-bold'>
                                         Containment
-                                    </td>
-                                    <td>
+                                    </div>
+                                    <div class='text-secondary small'>
                                         Distance offsets a corridor outward from the
                                         line (0 = the line itself); trail crossings
-                                        are marked and the ring is posted with them
-                                    </td>
-                                    <td class='text-nowrap'>
-                                        Containment {n}
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td class='fw-bold'>
+                                        are marked and the ring is posted with them.
+                                        Labels: Containment {n}
+                                    </div>
+                                </div>
+                                <div class='cloudtak-accent border rounded-3 text-white px-2 py-2'>
+                                    <div class='fw-bold'>
                                         Location Check
-                                    </td>
-                                    <td>
+                                    </div>
+                                    <div class='text-secondary small'>
                                         The raw line is intersected with the trail
-                                        network directly &mdash; no distance, no
-                                        transform; only markers are posted
-                                    </td>
-                                    <td class='text-nowrap'>
-                                        Check Location {n}
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                        <p>
-                            <span class='fw-bold'>Manual Point</span> (collapsed card at
-                            the bottom of the picker) covers locations not in the
-                            DataSync: type coordinates (DD / DMS / MGRS) or press
-                            <span class='fw-bold'>Select on Map</span> and click the map,
-                            then <span class='fw-bold'>Use This Point</span>. A manual
-                            point gets a range ring at the entered distance.
-                        </p>
+                                        network directly — no distance, no
+                                        transform; only markers are posted.
+                                        Labels: Check Location {n}
+                                    </div>
+                                </div>
+                            </div>
+                        </TablerBorder>
 
-                        <h4>2. Configure</h4>
-                        <p>
-                            Distance + units (hidden for Location Check), merge spacing
-                            (crossings closer than this merge into one marker, default
-                            50&nbsp;m), color, and trail network (when more than one
-                            exists). Settings persist per device.
-                        </p>
+                        <TablerBorder
+                            class='cloudtak-bg text-white mt-3'
+                            :fill-height='false'
+                            gap='sm'
+                        >
+                            <template #label>
+                                <p class='text-uppercase text-white-50 small mb-0'>
+                                    Configure
+                                </p>
+                            </template>
+                            <p class='mb-0'>
+                                Distance + units (hidden for Location Check), merge spacing
+                                (crossings closer than this merge into one marker, default
+                                50&nbsp;m), color, and trail network (when more than one
+                                exists). Settings persist per device.
+                            </p>
+                        </TablerBorder>
 
-                        <h4>3. Preview</h4>
-                        <p>
-                            The proposed ring (dashed) and numbered points render on the
-                            map without touching the mission. Go back to adjust, or post.
-                        </p>
-
-                        <h4>4. Post to Mission</h4>
-                        <p>
-                            Markers &mdash; and the ring, when one was generated &mdash;
-                            post to the active DataSync and sync to all subscribers.
-                            Numbering continues from the highest existing number of each
-                            label type in the mission; Location Check markers number in
-                            order along the line, ring crossings clockwise from north.
-                        </p>
+                        <TablerBorder
+                            class='cloudtak-bg text-white mt-3'
+                            :fill-height='false'
+                            gap='sm'
+                        >
+                            <template #label>
+                                <p class='text-uppercase text-white-50 small mb-0'>
+                                    Preview And Post
+                                </p>
+                            </template>
+                            <p class='mb-2'>
+                                The proposed ring (dashed) and numbered points render on the
+                                map without touching the mission. Go back to adjust, or post.
+                            </p>
+                            <p class='mb-0'>
+                                Markers — and the ring, when one was generated —
+                                post to the active DataSync and sync to all subscribers.
+                                Numbering continues from the highest existing number of each
+                                label type in the mission; Location Check markers number in
+                                order along the line, ring crossings clockwise from north.
+                            </p>
+                        </TablerBorder>
                     </div>
                     <div class='modal-footer'>
                         <button
@@ -1259,7 +1294,8 @@ async function saveSettings(): Promise<void> {
 </script>
 
 <style scoped>
-.plugin-pane {
+.plugin-pane,
+.help-modal {
     /* Match Mission Info insets; Tabler form surfaces are primary-tinted */
     --tabler-input-bg: var(--cloudtak-inset-bg);
     --tblr-bg-forms: var(--cloudtak-inset-bg);
@@ -1267,5 +1303,9 @@ async function saveSettings(): Promise<void> {
 
 .normal-case {
     text-transform: none;
+}
+
+.cursor-pointer {
+    cursor: pointer;
 }
 </style>
