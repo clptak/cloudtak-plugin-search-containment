@@ -24,140 +24,146 @@
             />
         </template>
         <template #default>
-            <TablerLoading
-                v-if='loading'
-                desc='Loading'
-            />
+            <div class='plugin-pane px-3 py-3'>
+                <TablerLoading
+                    v-if='loading'
+                    desc='Loading'
+                />
 
-            <!-- No active DataSync mission -->
-            <TablerNone
-                v-else-if='!mission'
-                :create='false'
-                label='Active DataSync'
-            >
-                <template #actions>
-                    <div class='col-12 px-3 py-2 text-center text-secondary'>
-                        Subscribe to a Data Sync mission and make it active
-                        (Menu &rarr; Data Sync), then return here.
-                    </div>
-                </template>
-            </TablerNone>
-
-            <!-- No snapping tileset on the server -->
-            <TablerNone
-                v-else-if='basemaps.length === 0'
-                :create='false'
-                label='Snapping Tileset'
-            >
-                <template #actions>
-                    <div class='col-12 px-3 py-2 text-center text-secondary'>
-                        No snapping-enabled basemap (e.g. snapping.pmtiles) is
-                        configured on this server. An administrator must enable
-                        snapping on a hosted vector basemap.
-                    </div>
-                </template>
-            </TablerNone>
-
-            <!-- Step 1: pick the source feature -->
-            <template v-else-if='stage === "pick"'>
-                <div class='col-12 px-2 py-2 text-secondary small'>
-                    Select a shape or line from
-                    <span
-                        class='fw-bold'
-                        v-text='missionName'
-                    />
-                    to find trail crossings for, or use a Manual Point below.
-                </div>
-
+                <!-- No active DataSync mission -->
                 <TablerNone
-                    v-if='sources.length === 0'
+                    v-else-if='!mission'
                     :create='false'
-                    label='Eligible Features'
+                    label='Active DataSync'
                 >
                     <template #actions>
                         <div class='col-12 px-3 py-2 text-center text-secondary'>
-                            The active mission has no polygons, circles or
-                            lines to work from — use a Manual Point below.
+                            Subscribe to a Data Sync mission and make it active
+                            (Menu &rarr; Data Sync), then return here.
                         </div>
                     </template>
                 </TablerNone>
 
-                <div
-                    v-else
-                    class='col-12 d-flex flex-column gap-2 px-2 py-2'
+                <!-- No snapping tileset on the server -->
+                <TablerNone
+                    v-else-if='basemaps.length === 0'
+                    :create='false'
+                    label='Snapping Tileset'
                 >
-                    <StandardItem
-                        v-for='feat of sources'
-                        :key='String(feat.id)'
-                        class='d-flex align-items-center gap-3 p-2 cursor-pointer'
-                        @click='selectSource(feat)'
-                    >
-                        <div
-                            class='d-flex align-items-center justify-content-center rounded-circle bg-black bg-opacity-25'
-                            style='width: 2.5rem; height: 2.5rem; min-width: 2.5rem;'
-                        >
-                            <IconLine
-                                v-if='isLineGeometry(feat)'
-                                :size='20'
-                                stroke='1'
-                            />
-                            <IconPolygon
-                                v-else
-                                :size='20'
-                                stroke='1'
-                            />
+                    <template #actions>
+                        <div class='col-12 px-3 py-2 text-center text-secondary'>
+                            No snapping-enabled basemap (e.g. snapping.pmtiles) is
+                            configured on this server. An administrator must enable
+                            snapping on a hosted vector basemap.
                         </div>
-                        <div
-                            class='d-flex flex-column'
-                            style='min-width: 0'
-                        >
-                            <div
-                                class='fw-bold text-truncate'
-                                v-text='String(feat.properties.callsign || "Unnamed")'
-                            />
-                            <div
-                                class='text-secondary small'
-                                v-text='isLineGeometry(feat) ? "Line" : "Shape"'
-                            />
-                        </div>
-                    </StandardItem>
-                </div>
+                    </template>
+                </TablerNone>
 
-                <!-- Manual point entry (collapsed by default) -->
-                <div class='col-12 px-2 pb-2'>
-                    <StandardItem class='p-0'>
-                        <div class='col-12'>
+                <!-- Step 1: pick the source feature -->
+                <template v-else-if='stage === "pick"'>
+                    <div class='col-12 py-2 text-secondary small'>
+                        Select a shape or line from
+                        <span
+                            class='fw-bold'
+                            v-text='missionName'
+                        />
+                        to find trail crossings for, or use a Manual Point below.
+                    </div>
+
+                    <TablerNone
+                        v-if='sources.length === 0'
+                        :create='false'
+                        label='Eligible Features'
+                    >
+                        <template #actions>
+                            <div class='col-12 px-3 py-2 text-center text-secondary'>
+                                The active mission has no polygons, circles or
+                                lines to work from — use a Manual Point below.
+                            </div>
+                        </template>
+                    </TablerNone>
+
+                    <div
+                        v-else
+                        class='col-12 d-flex flex-column gap-2 py-2'
+                    >
+                        <StandardItem
+                            v-for='feat of sources'
+                            :key='String(feat.id)'
+                            class='d-flex align-items-center gap-3 p-2 cursor-pointer'
+                            @click='selectSource(feat)'
+                        >
                             <div
-                                class='d-flex align-items-center gap-2 p-2 cursor-pointer user-select-none'
-                                role='button'
-                                tabindex='0'
-                                @click='toggleManual'
-                                @keydown.enter='toggleManual'
+                                class='d-flex align-items-center justify-content-center rounded-circle bg-black bg-opacity-25'
+                                style='width: 2.5rem; height: 2.5rem; min-width: 2.5rem;'
                             >
-                                <IconChevronDown
-                                    v-if='manualOpen'
+                                <IconLine
+                                    v-if='isLineGeometry(feat)'
                                     :size='20'
                                     stroke='1'
                                 />
-                                <IconChevronRight
+                                <IconPolygon
                                     v-else
                                     :size='20'
                                     stroke='1'
                                 />
-                                <span class='fw-bold'>Manual Point</span>
-                                <span class='text-secondary small ms-auto'>Custom location &amp; ring</span>
                             </div>
-
                             <div
-                                v-if='manualOpen'
-                                class='px-2 pb-3'
+                                class='d-flex flex-column'
+                                style='min-width: 0'
                             >
-                                <label class='form-label'>Name</label>
-                                <input
-                                    v-model='manualName'
-                                    class='form-control mb-2'
-                                    placeholder='Manual Point'
+                                <div
+                                    class='fw-bold text-truncate'
+                                    v-text='String(feat.properties.callsign || "Unnamed")'
+                                />
+                                <div
+                                    class='text-secondary small'
+                                    v-text='isLineGeometry(feat) ? "Line" : "Shape"'
+                                />
+                            </div>
+                        </StandardItem>
+                    </div>
+
+                    <!-- Manual point entry (collapsed by default) -->
+                    <div class='col-12 pb-2'>
+                        <TablerBorder
+                            class='cloudtak-bg text-white'
+                            :fill-height='false'
+                            gap='sm'
+                        >
+                            <template #label>
+                                <div
+                                    class='d-flex align-items-center gap-2 w-100 cursor-pointer user-select-none'
+                                    role='button'
+                                    tabindex='0'
+                                    @click='toggleManual'
+                                    @keydown.enter='toggleManual'
                                 >
+                                    <IconChevronDown
+                                        v-if='manualOpen'
+                                        :size='20'
+                                        stroke='1'
+                                    />
+                                    <IconChevronRight
+                                        v-else
+                                        :size='20'
+                                        stroke='1'
+                                    />
+                                    <p class='text-uppercase text-white-50 small mb-0'>
+                                        Manual Point
+                                    </p>
+                                    <span class='text-secondary small ms-auto normal-case'>
+                                        Custom location &amp; ring
+                                    </span>
+                                </div>
+                            </template>
+
+                            <template v-if='manualOpen'>
+                                <TablerInput
+                                    v-model='manualName'
+                                    label='Name'
+                                    placeholder='Manual Point'
+                                />
 
                                 <Coordinate
                                     v-model='manualCoords'
@@ -168,8 +174,9 @@
 
                                 <div class='d-flex gap-2 pt-3'>
                                     <button
+                                        type='button'
                                         class='btn'
-                                        :class='{ "btn-primary": picking }'
+                                        :class='picking ? "btn-primary" : "btn-secondary"'
                                         @click='togglePickFromMap'
                                     >
                                         <IconCrosshair
@@ -180,427 +187,430 @@
                                         {{ picking ? 'Click the map…' : 'Select on Map' }}
                                     </button>
                                     <button
+                                        type='button'
                                         class='btn btn-primary ms-auto'
                                         @click='useManualPoint'
                                     >
                                         Use This Point
                                     </button>
                                 </div>
-                            </div>
-                        </div>
-                    </StandardItem>
-                </div>
-            </template>
+                            </template>
+                        </TablerBorder>
+                    </div>
+                </template>
 
-            <!-- Step 2: configure & generate -->
-            <template v-else-if='stage === "configure" && selected'>
-                <div class='col-12 px-2 py-2'>
-                    <StandardItem class='d-flex align-items-center gap-3 p-2'>
-                        <div
-                            class='d-flex flex-column'
-                            style='min-width: 0'
+                <!-- Step 2: configure & generate -->
+                <template v-else-if='stage === "configure" && selected'>
+                    <div class='col-12'>
+                        <TablerBorder
+                            class='cloudtak-bg text-white'
+                            :fill-height='false'
+                            gap='sm'
                         >
-                            <div
-                                class='fw-bold text-truncate'
-                                v-text='String(selected.properties.callsign || "Unnamed")'
-                            />
-                            <div
-                                class='text-secondary small'
-                                v-text='sourceModeLabel'
-                            />
-                        </div>
-                        <div class='ms-auto'>
+                            <template #label>
+                                <p class='text-uppercase text-white-50 small mb-0'>
+                                    Source
+                                </p>
+                            </template>
+
+                            <div class='d-flex align-items-center gap-3'>
+                                <div
+                                    class='d-flex flex-column'
+                                    style='min-width: 0'
+                                >
+                                    <div
+                                        class='fw-bold text-truncate'
+                                        v-text='String(selected.properties.callsign || "Unnamed")'
+                                    />
+                                    <div
+                                        class='text-secondary small'
+                                        v-text='sourceModeLabel'
+                                    />
+                                </div>
+                                <div class='ms-auto'>
+                                    <button
+                                        type='button'
+                                        class='btn btn-sm btn-secondary'
+                                        @click='backToPick'
+                                    >
+                                        Change
+                                    </button>
+                                </div>
+                            </div>
+                        </TablerBorder>
+
+                        <TablerBorder
+                            class='cloudtak-bg text-white mt-3'
+                            :fill-height='false'
+                            gap='sm'
+                        >
+                            <template #label>
+                                <p class='text-uppercase text-white-50 small mb-0'>
+                                    Configure
+                                </p>
+                            </template>
+
+                            <div class='row g-2'>
+                                <template v-if='mode !== "check"'>
+                                    <div class='col-7'>
+                                        <TablerInput
+                                            v-model.number='config.distance'
+                                            type='number'
+                                            label='Distance'
+                                            :min='0'
+                                            step='any'
+                                        />
+                                    </div>
+                                    <div class='col-5'>
+                                        <TablerEnum
+                                            v-model='unitLabel'
+                                            label='Units'
+                                            :options='unitOptions'
+                                        />
+                                    </div>
+                                </template>
+
+                                <div class='col-7'>
+                                    <TablerInput
+                                        v-model.number='config.spacing'
+                                        type='number'
+                                        label='Merge Points Within (m)'
+                                        :min='0'
+                                        step='1'
+                                    />
+                                </div>
+                                <div class='col-5'>
+                                    <TablerInput
+                                        v-model='config.color'
+                                        type='color'
+                                        label='Color'
+                                    />
+                                </div>
+
+                                <div
+                                    v-if='basemaps.length > 1'
+                                    class='col-12'
+                                >
+                                    <TablerEnum
+                                        v-model='config.basemap'
+                                        label='Trail Network'
+                                        :options='basemapOptions'
+                                    />
+                                </div>
+                            </div>
+                        </TablerBorder>
+
+                        <TablerInlineAlert
+                            v-if='error'
+                            class='my-3'
+                            severity='danger'
+                            title='Error'
+                            :description='error'
+                        />
+
+                        <div class='d-flex pt-3'>
                             <button
-                                class='btn btn-sm'
+                                type='button'
+                                class='btn btn-secondary'
                                 @click='backToPick'
                             >
-                                Change
+                                Back
+                            </button>
+                            <button
+                                type='button'
+                                class='btn btn-primary ms-auto'
+                                :disabled='generating || !distanceValid'
+                                @click='generate'
+                            >
+                                <span
+                                    v-if='generating'
+                                    class='spinner-border spinner-border-sm me-2'
+                                />
+                                Generate
                             </button>
                         </div>
-                    </StandardItem>
-
-                    <div class='row g-2 pt-3'>
-                        <template v-if='mode !== "check"'>
-                            <div class='col-7'>
-                                <label class='form-label'>Distance</label>
-                                <input
-                                    v-model.number='config.distance'
-                                    type='number'
-                                    min='0'
-                                    step='any'
-                                    class='form-control'
-                                >
-                            </div>
-                            <div class='col-5'>
-                                <label class='form-label'>Units</label>
-                                <select
-                                    v-model='config.unit'
-                                    class='form-select'
-                                >
-                                    <option value='miles'>
-                                        Miles
-                                    </option>
-                                    <option value='meters'>
-                                        Meters
-                                    </option>
-                                </select>
-                            </div>
-                        </template>
-
-                        <div class='col-7'>
-                            <label class='form-label'>Merge points within (m)</label>
-                            <input
-                                v-model.number='config.spacing'
-                                type='number'
-                                min='0'
-                                step='1'
-                                class='form-control'
-                            >
-                        </div>
-                        <div class='col-5'>
-                            <label class='form-label'>Color</label>
-                            <input
-                                v-model='config.color'
-                                type='color'
-                                class='form-control form-control-color w-100'
-                            >
-                        </div>
-
-                        <div
-                            v-if='basemaps.length > 1'
-                            class='col-12'
-                        >
-                            <label class='form-label'>Trail Network</label>
-                            <select
-                                v-model='config.basemap'
-                                class='form-select'
-                            >
-                                <option
-                                    v-for='bm of basemaps'
-                                    :key='bm.id'
-                                    :value='bm.name'
-                                    v-text='bm.name'
-                                />
-                            </select>
-                        </div>
                     </div>
+                </template>
 
-                    <div
-                        v-if='error'
-                        class='alert alert-danger my-3'
-                        v-text='error'
-                    />
-
-                    <div class='d-flex pt-3'>
-                        <button
-                            class='btn'
-                            @click='backToPick'
-                        >
-                            Back
-                        </button>
-                        <button
-                            class='btn btn-primary ms-auto'
-                            :disabled='generating || !distanceValid'
-                            @click='generate'
-                        >
-                            <span
-                                v-if='generating'
-                                class='spinner-border spinner-border-sm me-2'
-                            />
-                            Generate
-                        </button>
-                    </div>
-                </div>
-            </template>
-
-            <!-- Step 3: preview & confirm -->
-            <template v-else-if='stage === "preview"'>
-                <div class='col-12 px-2 py-2'>
-                    <div
-                        v-if='points.length'
-                        class='alert alert-info'
-                    >
-                        <span
-                            class='fw-bold'
-                            v-text='points.length'
+                <!-- Step 3: preview & confirm -->
+                <template v-else-if='stage === "preview"'>
+                    <div class='col-12'>
+                        <TablerInlineAlert
+                            v-if='points.length'
+                            severity='info'
+                            title='Preview'
+                            :description='previewInfoDescription'
                         />
-                        trail crossing{{ points.length === 1 ? '' : 's' }} found
-                        &mdash; previewed on the map as
-                        <span class='fw-bold'>{{ labelPrefix }} {{ startNumber }}</span>
-                        through
-                        <span class='fw-bold'>{{ labelPrefix }} {{ startNumber + points.length - 1 }}</span>.
-                    </div>
-                    <div
-                        v-else-if='shouldPostRing'
-                        class='alert alert-warning'
-                    >
-                        No trail crossings were found on the ring. You can still
-                        post the ring itself, or go back and adjust the distance.
-                    </div>
-                    <div
-                        v-else
-                        class='alert alert-warning'
-                    >
-                        No trail crossings were found along the line. Go back
-                        and adjust the merge spacing or pick a different line.
-                    </div>
-
-                    <div
-                        v-if='error'
-                        class='alert alert-danger'
-                        v-text='error'
-                    />
-
-                    <div class='d-flex pt-2'>
-                        <button
-                            class='btn'
-                            :disabled='posting'
-                            @click='cancelPreview'
-                        >
-                            Back
-                        </button>
-                        <button
-                            class='btn btn-primary ms-auto'
-                            :disabled='posting'
-                            @click='confirm'
-                        >
-                            <span
-                                v-if='posting'
-                                class='spinner-border spinner-border-sm me-2'
-                            />
-                            Post to Mission
-                        </button>
-                    </div>
-                </div>
-            </template>
-
-            <!-- Step 4: done -->
-            <template v-else-if='stage === "done"'>
-                <div class='col-12 px-2 py-2'>
-                    <div class='alert alert-success'>
-                        Posted <span
-                            class='fw-bold'
-                            v-text='postedCount'
+                        <TablerInlineAlert
+                            v-else-if='shouldPostRing'
+                            severity='warning'
+                            title='No Crossings'
+                            description='No trail crossings were found on the ring. You can still post the ring itself, or go back and adjust the distance.'
                         />
-                        {{ labelPrefix }} marker{{ postedCount === 1 ? '' : 's' }}{{ shouldPostRing ? ' and the containment ring' : '' }} to
-                        <span
-                            class='fw-bold'
-                            v-text='missionName'
-                        />.
-                    </div>
-                    <div class='d-flex pt-2'>
-                        <button
-                            class='btn btn-primary ms-auto'
-                            @click='reset'
-                        >
-                            Run Again
-                        </button>
-                    </div>
-                </div>
-            </template>
+                        <TablerInlineAlert
+                            v-else
+                            severity='warning'
+                            title='No Crossings'
+                            description='No trail crossings were found along the line. Go back and adjust the merge spacing or pick a different line.'
+                        />
 
-            <!-- Line usage choice modal -->
-            <TablerModal
-                v-if='pendingLine'
-                size='sm'
-            >
-                <div class='modal-status bg-blue' />
-                <button
-                    type='button'
-                    class='btn-close'
-                    aria-label='Close'
-                    @click='pendingLine = undefined'
-                />
-                <div class='modal-header text-body'>
-                    <div class='d-flex flex-column'>
-                        <div class='modal-title'>
-                            Use Line As&hellip;
+                        <TablerInlineAlert
+                            v-if='error'
+                            class='mt-2'
+                            severity='danger'
+                            title='Error'
+                            :description='error'
+                        />
+
+                        <div class='d-flex pt-3'>
+                            <button
+                                type='button'
+                                class='btn btn-secondary'
+                                :disabled='posting'
+                                @click='cancelPreview'
+                            >
+                                Back
+                            </button>
+                            <button
+                                type='button'
+                                class='btn btn-primary ms-auto'
+                                :disabled='posting'
+                                @click='confirm'
+                            >
+                                <span
+                                    v-if='posting'
+                                    class='spinner-border spinner-border-sm me-2'
+                                />
+                                Post to Mission
+                            </button>
                         </div>
-                        <div
-                            class='text-secondary small'
-                            v-text='String(pendingLine.properties.callsign || "Unnamed Line")'
-                        />
                     </div>
-                </div>
-                <div class='modal-body text-body'>
-                    <div class='d-flex flex-column gap-2'>
-                        <StandardItem
-                            class='d-flex align-items-center gap-3 p-2'
-                            @click='chooseLineMode("containment")'
-                        >
-                            <div
-                                class='d-flex align-items-center justify-content-center rounded-circle bg-black bg-opacity-25'
-                                style='width: 2.5rem; height: 2.5rem; min-width: 2.5rem;'
-                            >
-                                <IconBarrierBlock
-                                    :size='20'
-                                    stroke='1'
-                                />
-                            </div>
-                            <div
-                                class='d-flex flex-column'
-                                style='min-width: 0'
-                            >
-                                <div class='fw-bold'>
-                                    Containment
-                                </div>
-                                <div class='text-secondary small'>
-                                    Offset a ring from the line by a distance
-                                    (0 = the line itself) and mark trail
-                                    crossings as Containment points
-                                </div>
-                            </div>
-                        </StandardItem>
-                        <StandardItem
-                            class='d-flex align-items-center gap-3 p-2'
-                            @click='chooseLineMode("check")'
-                        >
-                            <div
-                                class='d-flex align-items-center justify-content-center rounded-circle bg-black bg-opacity-25'
-                                style='width: 2.5rem; height: 2.5rem; min-width: 2.5rem;'
-                            >
-                                <IconCrosshair
-                                    :size='20'
-                                    stroke='1'
-                                />
-                            </div>
-                            <div
-                                class='d-flex flex-column'
-                                style='min-width: 0'
-                            >
-                                <div class='fw-bold'>
-                                    Location Check
-                                </div>
-                                <div class='text-secondary small'>
-                                    Mark every point where this line crosses
-                                    the trail network as "Check Location"
-                                </div>
-                            </div>
-                        </StandardItem>
-                    </div>
-                </div>
-            </TablerModal>
+                </template>
 
-            <!-- Usage / help modal -->
-            <TablerModal
-                v-if='showHelp'
-                size='lg'
-            >
-                <div class='modal-status bg-blue' />
-                <button
-                    type='button'
-                    class='btn-close'
-                    aria-label='Close'
-                    @click='showHelp = false'
-                />
-                <div class='modal-header text-body'>
-                    <IconBarrierBlock
-                        :size='24'
-                        stroke='1'
-                        class='me-2'
-                    />
-                    <div class='modal-title'>
-                        Search Containment &mdash; Usage
+                <!-- Step 4: done -->
+                <template v-else-if='stage === "done"'>
+                    <div class='col-12'>
+                        <TablerInlineAlert
+                            severity='success'
+                            title='Posted'
+                            :description='doneDescription'
+                        />
+                        <div class='d-flex pt-3'>
+                            <button
+                                type='button'
+                                class='btn btn-primary ms-auto'
+                                @click='reset'
+                            >
+                                Run Again
+                            </button>
+                        </div>
                     </div>
-                </div>
-                <div
-                    class='modal-body text-body overflow-auto'
-                    style='max-height: 65vh'
+                </template>
+
+                <!-- Line usage choice modal -->
+                <TablerModal
+                    v-if='pendingLine'
+                    size='sm'
                 >
-                    <p>
-                        Pick a source &mdash; a mission shape, a mission line, or a
-                        manually entered point &mdash; and the plugin finds every place
-                        the trail network crosses the resulting boundary, plots
-                        numbered markers, and posts them into the active DataSync
-                        mission.
-                    </p>
-
-                    <h4>1. Pick a source</h4>
-                    <p>
-                        The list shows the active mission's polygons, circles and
-                        lines. <span class='fw-bold'>Shapes</span> go straight to
-                        configuration &mdash; the ring is the boundary offset outward
-                        by the entered distance (0 uses the boundary as-is).
-                        <span class='fw-bold'>Lines</span> ask what the line means:
-                    </p>
-                    <table class='table table-sm'>
-                        <thead>
-                            <tr>
-                                <th>Choice</th>
-                                <th>Behavior</th>
-                                <th>Labels</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td class='fw-bold'>
-                                    Containment
-                                </td>
-                                <td>
-                                    Distance offsets a corridor outward from the
-                                    line (0 = the line itself); trail crossings
-                                    are marked and the ring is posted with them
-                                </td>
-                                <td class='text-nowrap'>
-                                    Containment {n}
-                                </td>
-                            </tr>
-                            <tr>
-                                <td class='fw-bold'>
-                                    Location Check
-                                </td>
-                                <td>
-                                    The raw line is intersected with the trail
-                                    network directly &mdash; no distance, no
-                                    transform; only markers are posted
-                                </td>
-                                <td class='text-nowrap'>
-                                    Check Location {n}
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                    <p>
-                        <span class='fw-bold'>Manual Point</span> (collapsed card at
-                        the bottom of the picker) covers locations not in the
-                        DataSync: type coordinates (DD / DMS / MGRS) or press
-                        <span class='fw-bold'>Select on Map</span> and click the map,
-                        then <span class='fw-bold'>Use This Point</span>. A manual
-                        point gets a range ring at the entered distance.
-                    </p>
-
-                    <h4>2. Configure</h4>
-                    <p>
-                        Distance + units (hidden for Location Check), merge spacing
-                        (crossings closer than this merge into one marker, default
-                        50&nbsp;m), color, and trail network (when more than one
-                        exists). Settings persist per device.
-                    </p>
-
-                    <h4>3. Preview</h4>
-                    <p>
-                        The proposed ring (dashed) and numbered points render on the
-                        map without touching the mission. Go back to adjust, or post.
-                    </p>
-
-                    <h4>4. Post to Mission</h4>
-                    <p>
-                        Markers &mdash; and the ring, when one was generated &mdash;
-                        post to the active DataSync and sync to all subscribers.
-                        Numbering continues from the highest existing number of each
-                        label type in the mission; Location Check markers number in
-                        order along the line, ring crossings clockwise from north.
-                    </p>
-                </div>
-                <div class='modal-footer'>
+                    <div class='modal-status bg-blue' />
                     <button
-                        class='btn btn-primary w-100'
+                        type='button'
+                        class='btn-close'
+                        aria-label='Close'
+                        @click='pendingLine = undefined'
+                    />
+                    <div class='modal-header text-body'>
+                        <div class='d-flex flex-column'>
+                            <div class='modal-title'>
+                                Use Line As&hellip;
+                            </div>
+                            <div
+                                class='text-secondary small'
+                                v-text='String(pendingLine.properties.callsign || "Unnamed Line")'
+                            />
+                        </div>
+                    </div>
+                    <div class='modal-body text-body'>
+                        <div class='d-flex flex-column gap-2'>
+                            <StandardItem
+                                class='d-flex align-items-center gap-3 p-2'
+                                @click='chooseLineMode("containment")'
+                            >
+                                <div
+                                    class='d-flex align-items-center justify-content-center rounded-circle bg-black bg-opacity-25'
+                                    style='width: 2.5rem; height: 2.5rem; min-width: 2.5rem;'
+                                >
+                                    <IconBarrierBlock
+                                        :size='20'
+                                        stroke='1'
+                                    />
+                                </div>
+                                <div
+                                    class='d-flex flex-column'
+                                    style='min-width: 0'
+                                >
+                                    <div class='fw-bold'>
+                                        Containment
+                                    </div>
+                                    <div class='text-secondary small'>
+                                        Offset a ring from the line by a distance
+                                        (0 = the line itself) and mark trail
+                                        crossings as Containment points
+                                    </div>
+                                </div>
+                            </StandardItem>
+                            <StandardItem
+                                class='d-flex align-items-center gap-3 p-2'
+                                @click='chooseLineMode("check")'
+                            >
+                                <div
+                                    class='d-flex align-items-center justify-content-center rounded-circle bg-black bg-opacity-25'
+                                    style='width: 2.5rem; height: 2.5rem; min-width: 2.5rem;'
+                                >
+                                    <IconCrosshair
+                                        :size='20'
+                                        stroke='1'
+                                    />
+                                </div>
+                                <div
+                                    class='d-flex flex-column'
+                                    style='min-width: 0'
+                                >
+                                    <div class='fw-bold'>
+                                        Location Check
+                                    </div>
+                                    <div class='text-secondary small'>
+                                        Mark every point where this line crosses
+                                        the trail network as "Check Location"
+                                    </div>
+                                </div>
+                            </StandardItem>
+                        </div>
+                    </div>
+                </TablerModal>
+
+                <!-- Usage / help modal -->
+                <TablerModal
+                    v-if='showHelp'
+                    size='lg'
+                >
+                    <div class='modal-status bg-blue' />
+                    <button
+                        type='button'
+                        class='btn-close'
+                        aria-label='Close'
                         @click='showHelp = false'
+                    />
+                    <div class='modal-header text-body'>
+                        <IconBarrierBlock
+                            :size='24'
+                            stroke='1'
+                            class='me-2'
+                        />
+                        <div class='modal-title'>
+                            Search Containment &mdash; Usage
+                        </div>
+                    </div>
+                    <div
+                        class='modal-body text-body overflow-auto'
+                        style='max-height: 65vh'
                     >
-                        Close
-                    </button>
-                </div>
-            </TablerModal>
+                        <p>
+                            Pick a source &mdash; a mission shape, a mission line, or a
+                            manually entered point &mdash; and the plugin finds every place
+                            the trail network crosses the resulting boundary, plots
+                            numbered markers, and posts them into the active DataSync
+                            mission.
+                        </p>
+
+                        <h4>1. Pick a source</h4>
+                        <p>
+                            The list shows the active mission's polygons, circles and
+                            lines. <span class='fw-bold'>Shapes</span> go straight to
+                            configuration &mdash; the ring is the boundary offset outward
+                            by the entered distance (0 uses the boundary as-is).
+                            <span class='fw-bold'>Lines</span> ask what the line means:
+                        </p>
+                        <table class='table table-sm'>
+                            <thead>
+                                <tr>
+                                    <th>Choice</th>
+                                    <th>Behavior</th>
+                                    <th>Labels</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td class='fw-bold'>
+                                        Containment
+                                    </td>
+                                    <td>
+                                        Distance offsets a corridor outward from the
+                                        line (0 = the line itself); trail crossings
+                                        are marked and the ring is posted with them
+                                    </td>
+                                    <td class='text-nowrap'>
+                                        Containment {n}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class='fw-bold'>
+                                        Location Check
+                                    </td>
+                                    <td>
+                                        The raw line is intersected with the trail
+                                        network directly &mdash; no distance, no
+                                        transform; only markers are posted
+                                    </td>
+                                    <td class='text-nowrap'>
+                                        Check Location {n}
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <p>
+                            <span class='fw-bold'>Manual Point</span> (collapsed card at
+                            the bottom of the picker) covers locations not in the
+                            DataSync: type coordinates (DD / DMS / MGRS) or press
+                            <span class='fw-bold'>Select on Map</span> and click the map,
+                            then <span class='fw-bold'>Use This Point</span>. A manual
+                            point gets a range ring at the entered distance.
+                        </p>
+
+                        <h4>2. Configure</h4>
+                        <p>
+                            Distance + units (hidden for Location Check), merge spacing
+                            (crossings closer than this merge into one marker, default
+                            50&nbsp;m), color, and trail network (when more than one
+                            exists). Settings persist per device.
+                        </p>
+
+                        <h4>3. Preview</h4>
+                        <p>
+                            The proposed ring (dashed) and numbered points render on the
+                            map without touching the mission. Go back to adjust, or post.
+                        </p>
+
+                        <h4>4. Post to Mission</h4>
+                        <p>
+                            Markers &mdash; and the ring, when one was generated &mdash;
+                            post to the active DataSync and sync to all subscribers.
+                            Numbering continues from the highest existing number of each
+                            label type in the mission; Location Check markers number in
+                            order along the line, ring crossings clockwise from north.
+                        </p>
+                    </div>
+                    <div class='modal-footer'>
+                        <button
+                            type='button'
+                            class='btn btn-primary w-100'
+                            @click='showHelp = false'
+                        >
+                            Close
+                        </button>
+                    </div>
+                </TablerModal>
+            </div>
         </template>
     </MenuTemplate>
 </template>
@@ -615,7 +625,11 @@ import {
     TablerModal,
     TablerLoading,
     TablerIconButton,
-    TablerRefreshButton
+    TablerRefreshButton,
+    TablerBorder,
+    TablerInput,
+    TablerEnum,
+    TablerInlineAlert
 } from '@tak-ps/vue-tabler';
 import {
     IconLine,
@@ -722,6 +736,31 @@ function isLineGeometry(feat: Feature): boolean {
 
 const labelPrefix = computed(() => {
     return mode.value === 'check' ? 'Check Location' : 'Containment';
+});
+
+const unitOptions = ['Miles', 'Meters'];
+
+const unitLabel = computed({
+    get(): string {
+        return config.value.unit === 'meters' ? 'Meters' : 'Miles';
+    },
+    set(value: string): void {
+        config.value.unit = value === 'Meters' ? 'meters' : 'miles';
+    }
+});
+
+const basemapOptions = computed(() => basemaps.value.map((bm) => bm.name));
+
+const previewInfoDescription = computed(() => {
+    const end = startNumber.value + points.value.length - 1;
+    const plural = points.value.length === 1 ? '' : 's';
+    return `${points.value.length} trail crossing${plural} found — previewed on the map as ${labelPrefix.value} ${startNumber.value} through ${labelPrefix.value} ${end}.`;
+});
+
+const doneDescription = computed(() => {
+    const plural = postedCount.value === 1 ? '' : 's';
+    const ring = shouldPostRing.value ? ' and the containment ring' : '';
+    return `Posted ${postedCount.value} ${labelPrefix.value} marker${plural}${ring} to ${missionName.value}.`;
 });
 
 const sourceModeLabel = computed(() => {
@@ -1218,3 +1257,15 @@ async function saveSettings(): Promise<void> {
     }
 }
 </script>
+
+<style scoped>
+.plugin-pane {
+    /* Match Mission Info insets; Tabler form surfaces are primary-tinted */
+    --tabler-input-bg: var(--cloudtak-inset-bg);
+    --tblr-bg-forms: var(--cloudtak-inset-bg);
+}
+
+.normal-case {
+    text-transform: none;
+}
+</style>
