@@ -7,10 +7,22 @@
  * 1. CoT dest `path` = layer UID at send time (atomic; same as CloudTAK ETL)
  * 2. `attachFeatures` after the CoT is in the mission (races if called too soon)
  */
-import type Subscription from '../../../src/base/subscription.ts';
-import type { Feature, MissionLayer } from '../../../src/types.ts';
+import type { Feature, MissionLayer, MissionLayer_Create } from '../../../src/types.ts';
 
 export const CONTAINMENT_FOLDER = 'Containment';
+
+/**
+ * Pinia unwraps CloudTAK's Subscription class. CloudTAK 13.92 added private
+ * flush/confirm/failed on SubscriptionFeature, so mapStore.mission is no longer
+ * assignable to `Subscription`. These helpers only need the layer APIs.
+ */
+type MissionLayerHost = {
+    layer: {
+        list: (opts?: { refresh?: boolean }) => Promise<MissionLayer[]>;
+        create: (layer: MissionLayer_Create) => Promise<unknown>;
+        attachFeatures: (folderUid: string, uids: string[]) => Promise<unknown>;
+    };
+};
 
 export function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -61,7 +73,7 @@ export function withMissionFolderDest(
  * (create response is TAKItem-wrapped and not relied upon).
  */
 export async function ensureContainmentFolder(
-    sub: Subscription
+    sub: MissionLayerHost
 ): Promise<MissionLayer> {
     let layers = await sub.layer.list({ refresh: true });
     const existing = findLayerByName(layers, CONTAINMENT_FOLDER);
@@ -89,7 +101,7 @@ export async function ensureContainmentFolder(
  * Attaches one UID at a time (matches CloudTAK Layers UI) with retries.
  */
 export async function attachFeaturesToFolder(
-    sub: Subscription,
+    sub: MissionLayerHost,
     folderUid: string,
     uids: string[],
     opts?: {
