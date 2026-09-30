@@ -12,6 +12,15 @@ import type { Feature, MissionLayer, MissionLayer_Create } from '../../../src/ty
 export const CONTAINMENT_FOLDER = 'Containment';
 
 /**
+ * Mission layer name for a run.
+ * A blank prefix stays "Containment"; "North" becomes "North Containment".
+ */
+export function containmentFolderName(prefix: string): string {
+    const trimmed = prefix.trim();
+    return trimmed ? `${trimmed} Containment` : CONTAINMENT_FOLDER;
+}
+
+/**
  * Pinia unwraps CloudTAK's Subscription class. CloudTAK 13.92 added private
  * flush/confirm/failed on SubscriptionFeature, so mapStore.mission is no longer
  * assignable to `Subscription`. These helpers only need the layer APIs.
@@ -67,28 +76,29 @@ export function withMissionFolderDest(
 }
 
 /**
- * Ensure a root-level UID layer named "Containment" exists on the mission.
- * Reuses an existing layer with that name; creates one if missing.
- * Re-lists after create so we always return a fully hydrated layer uid
- * (create response is TAKItem-wrapped and not relied upon).
+ * Ensure a root-level UID layer with the given name exists on the mission.
+ * Defaults to "Containment". Reuses an existing layer with that exact name;
+ * creates one if missing. Re-lists after create so we always return a fully
+ * hydrated layer uid (create response is TAKItem-wrapped and not relied upon).
  */
 export async function ensureContainmentFolder(
-    sub: MissionLayerHost
+    sub: MissionLayerHost,
+    name: string = CONTAINMENT_FOLDER
 ): Promise<MissionLayer> {
     let layers = await sub.layer.list({ refresh: true });
-    const existing = findLayerByName(layers, CONTAINMENT_FOLDER);
+    const existing = findLayerByName(layers, name);
     if (existing) return existing;
 
     await sub.layer.create({
-        name: CONTAINMENT_FOLDER,
+        name,
         type: 'UID'
     });
 
     // create() already refreshes; list from local store
     layers = await sub.layer.list();
-    const created = findLayerByName(layers, CONTAINMENT_FOLDER);
+    const created = findLayerByName(layers, name);
     if (!created) {
-        throw new Error(`Failed to create "${CONTAINMENT_FOLDER}" mission folder`);
+        throw new Error(`Failed to create "${name}" mission folder`);
     }
 
     return created;
@@ -107,12 +117,14 @@ export async function attachFeaturesToFolder(
     opts?: {
         initialDelayMs?: number;
         attempts?: number;
+        folderName?: string;
     }
 ): Promise<void> {
     if (!uids.length) return;
 
     const initialDelayMs = opts?.initialDelayMs ?? 800;
     const attempts = opts?.attempts ?? 6;
+    const folderName = opts?.folderName ?? CONTAINMENT_FOLDER;
 
     // #region agent log
     // Console-only: remote CloudTAK CSP blocks localhost debug ingest
@@ -188,7 +200,7 @@ export async function attachFeaturesToFolder(
     if (failed.length) {
         throw new Error(
             `Posted to mission but could not file ${failed.length}/${uids.length} `
-            + `into "${CONTAINMENT_FOLDER}" (they may still be at mission root)`
+            + `into "${folderName}" (they may still be at mission root)`
             + ` [debug indexes: ${failed.map((u) => uids.indexOf(u)).join(',')}]`
         );
     }

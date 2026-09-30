@@ -297,6 +297,18 @@
                                         :options='basemapOptions'
                                     />
                                 </div>
+
+                                <div class='col-12'>
+                                    <TablerInput
+                                        v-model='labelPrefixInput'
+                                        label='Label Prefix'
+                                        placeholder='Optional'
+                                    />
+                                    <div class='text-secondary small pt-1'>
+                                        Leave blank for {{ blankMarkerExample }} in the Containment layer.
+                                        A prefix such as North names markers North 1, North 2, and files them in North Containment.
+                                    </div>
+                                </div>
                             </div>
                         </TablerBorder>
 
@@ -336,7 +348,7 @@
                 <template v-else-if='stage === "preview"'>
                     <div class='col-12'>
                         <TablerInlineAlert
-                            v-if='points.length'
+                            v-if='previewMarkers.length'
                             severity='info'
                             title='Preview'
                             :description='previewInfoDescription'
@@ -353,6 +365,59 @@
                             title='No Crossings'
                             description='No trail crossings were found along the line. Go back and adjust the merge spacing or pick a different line.'
                         />
+
+                        <TablerBorder
+                            v-if='previewMarkers.length'
+                            class='cloudtak-bg text-white mt-3'
+                            :fill-height='false'
+                            gap='sm'
+                        >
+                            <template #label>
+                                <p class='text-uppercase text-white-50 small mb-0'>
+                                    Markers
+                                </p>
+                            </template>
+
+                            <label class='d-flex align-items-center gap-2 mb-2 user-select-none'>
+                                <input
+                                    ref='selectAllBox'
+                                    type='checkbox'
+                                    class='form-check-input m-0'
+                                    :checked='allMarkersIncluded'
+                                    aria-label='Select all markers'
+                                    @change='toggleAllMarkers'
+                                >
+                                <span class='small'>All</span>
+                            </label>
+
+                            <div
+                                class='d-flex flex-column gap-1 overflow-auto'
+                                style='max-height: 16rem'
+                            >
+                                <div
+                                    v-for='(marker, index) in previewMarkers'
+                                    :key='marker.callsign + "-" + index'
+                                    class='d-flex align-items-center gap-2'
+                                    style='min-width: 0'
+                                >
+                                    <input
+                                        v-model='marker.included'
+                                        type='checkbox'
+                                        class='form-check-input m-0'
+                                        :aria-label='"Post " + marker.callsign'
+                                        @change='syncPreviewPoints'
+                                    >
+                                    <button
+                                        type='button'
+                                        class='btn btn-link marker-link flex-grow-1 p-0 text-start text-truncate'
+                                        style='min-width: 0'
+                                        @click='centerOnMarker(marker)'
+                                    >
+                                        {{ marker.callsign }}
+                                    </button>
+                                </div>
+                            </div>
+                        </TablerBorder>
 
                         <TablerInlineAlert
                             v-if='error'
@@ -374,7 +439,7 @@
                             <button
                                 type='button'
                                 class='btn btn-primary ms-auto'
-                                :disabled='posting'
+                                :disabled='!canPost'
                                 @click='confirm'
                             >
                                 <span
@@ -607,8 +672,12 @@
                             <p class='mb-0'>
                                 Distance + units (hidden for Location Check), merge spacing
                                 (crossings closer than this merge into one marker, default
-                                50&nbsp;m), color, and trail network (when more than one
-                                exists). Settings persist per device.
+                                50&nbsp;m), color, trail network (when more than one
+                                exists), and an optional label prefix. Leave the prefix
+                                blank for Containment (or Check Location) numbering in the
+                                Containment layer. A prefix such as North names markers
+                                North 1, North 2, and files them in a layer named North
+                                Containment. Settings other than the prefix persist per device.
                             </p>
                         </TablerBorder>
 
@@ -624,14 +693,19 @@
                             </template>
                             <p class='mb-2'>
                                 The proposed ring (dashed) and numbered points render on the
-                                map without touching the mission. Go back to adjust, or post.
+                                map without touching the mission. Each crossing is listed so
+                                you can center the map on it and uncheck any marker you do
+                                not want to post. Unchecked markers stay on the preview,
+                                drawn lighter. Go back to adjust, or post.
                             </p>
                             <p class='mb-0'>
-                                Markers — and the ring, when one was generated —
-                                post to the active DataSync and sync to all subscribers.
-                                Numbering continues from the highest existing number of each
-                                label type in the mission; Location Check markers number in
-                                order along the line, ring crossings clockwise from north.
+                                Checked markers — and the ring, when one was generated —
+                                post to the active DataSync in the Containment layer, or in
+                                &ldquo;{prefix} Containment&rdquo; when a prefix is set, and
+                                sync to all subscribers. Numbers are assigned at Generate
+                                from the highest existing matching label and are the names
+                                that get posted. Location Check markers number in order
+                                along the line; ring crossings number clockwise from north.
                             </p>
                         </TablerBorder>
                     </div>
@@ -675,12 +749,12 @@ import {
     IconChevronRight,
     IconBarrierBlock
 } from '@tabler/icons-vue';
-import type { MapMouseEvent } from 'maplibre-gl';
+import type { GeoJSONSource, MapMouseEvent } from 'maplibre-gl';
 import { useMapStore } from '../../../src/stores/map.ts';
 import KV from '../../../src/base/kv.ts';
 import { OriginMode } from '../../../src/base/cot.ts';
 import type { Feature } from '../../../src/types.ts';
-import type { Position } from 'geojson';
+import type { FeatureCollection, Position } from 'geojson';
 import {
     toKilometers,
     buildRings,
@@ -701,6 +775,7 @@ import {
     buildRingFeature
 } from './markers.ts';
 import {
+    containmentFolderName,
     ensureContainmentFolder,
     withMissionFolderDest,
     attachFeaturesToFolder
@@ -733,10 +808,21 @@ const pendingLine = ref<Feature | undefined>();
 // Usage / help modal visibility
 const showHelp = ref(false);
 
+type PreviewMarker = {
+    coordinates: Position;
+    n: number;
+    callsign: string;
+    included: boolean;
+};
+
 const rings = ref<Position[][]>([]);
-const points = ref<Position[]>([]);
+const previewMarkers = ref<PreviewMarker[]>([]);
 const startNumber = ref(1);
 const postedCount = ref(0);
+const labelPrefixInput = ref('');
+const generatedPrefix = ref('Containment');
+const generatedFolderName = ref('Containment');
+const selectAllBox = ref<HTMLInputElement | null>(null);
 
 // False when the source is a mission line used as-is (distance 0):
 // the geometry already exists in the mission, so don't repost it
@@ -770,7 +856,24 @@ function isLineGeometry(feat: Feature): boolean {
 }
 
 const labelPrefix = computed(() => {
+    const custom = labelPrefixInput.value.trim();
+    if (custom) return custom;
     return mode.value === 'check' ? 'Check Location' : 'Containment';
+});
+
+const blankMarkerExample = computed(() => {
+    return mode.value === 'check' ? 'Check Location 1, 2, …' : 'Containment 1, 2, …';
+});
+
+const allMarkersIncluded = computed(() => {
+    return previewMarkers.value.length > 0
+        && previewMarkers.value.every((marker) => marker.included);
+});
+
+const canPost = computed(() => {
+    if (posting.value) return false;
+    if (previewMarkers.value.some((marker) => marker.included)) return true;
+    return shouldPostRing.value && rings.value.length > 0;
 });
 
 const unitOptions = ['Miles', 'Meters'];
@@ -787,15 +890,35 @@ const unitLabel = computed({
 const basemapOptions = computed(() => basemaps.value.map((bm) => bm.name));
 
 const previewInfoDescription = computed(() => {
-    const end = startNumber.value + points.value.length - 1;
-    const plural = points.value.length === 1 ? '' : 's';
-    return `${points.value.length} trail crossing${plural} found — previewed on the map as ${labelPrefix.value} ${startNumber.value} through ${labelPrefix.value} ${end}.`;
+    const total = previewMarkers.value.length;
+    const selected = previewMarkers.value.filter((marker) => marker.included);
+    const plural = total === 1 ? '' : 's';
+
+    if (!selected.length) {
+        return `${total} trail crossing${plural} found. None selected to post.`;
+    }
+
+    if (selected.length === total) {
+        const start = previewMarkers.value[0].callsign;
+        const end = previewMarkers.value[total - 1].callsign;
+        const range = total === 1 ? start : `${start} through ${end}`;
+        return `${total} trail crossing${plural} found — previewed on the map as ${range}. Uncheck any you do not want to post.`;
+    }
+
+    return `${total} trail crossing${plural} found. ${selected.length} selected to post.`;
 });
 
 const doneDescription = computed(() => {
+    const folder = generatedFolderName.value;
+    const mission = missionName.value;
+
+    if (postedCount.value === 0 && shouldPostRing.value) {
+        return `Posted the containment ring to ${folder} in ${mission}.`;
+    }
+
     const plural = postedCount.value === 1 ? '' : 's';
     const ring = shouldPostRing.value ? ' and the containment ring' : '';
-    return `Posted ${postedCount.value} ${labelPrefix.value} marker${plural}${ring} to ${missionName.value}.`;
+    return `Posted ${postedCount.value} ${generatedPrefix.value} marker${plural}${ring} to ${folder} in ${mission}.`;
 });
 
 const sourceModeLabel = computed(() => {
@@ -829,6 +952,15 @@ async function softEnsureFolder(): Promise<void> {
 watch(mission, () => {
     void softEnsureFolder();
 }, { immediate: true });
+
+watch(previewMarkers, () => {
+    const box = selectAllBox.value;
+    if (!box) return;
+
+    const total = previewMarkers.value.length;
+    const selected = previewMarkers.value.filter((marker) => marker.included).length;
+    box.indeterminate = selected > 0 && selected < total;
+}, { deep: true });
 
 onMounted(async () => {
     await restoreSettings();
@@ -1009,11 +1141,24 @@ async function generate(): Promise<void> {
 
         // Number along the drawn line when using it as-is,
         // otherwise clockwise around the ring
-        points.value = lineAsIs
+        const sorted = lineAsIs
             ? sortAlongLine(clustered, rings.value.flat())
             : sortClockwise(clustered);
 
-        startNumber.value = nextLabelNumber(await mapStore.mission.feature.list(), labelPrefix.value);
+        const prefix = labelPrefix.value;
+        startNumber.value = nextLabelNumber(await mapStore.mission.feature.list(), prefix);
+        generatedPrefix.value = prefix;
+        generatedFolderName.value = containmentFolderName(labelPrefixInput.value);
+
+        previewMarkers.value = sorted.map((coordinates, i) => {
+            const n = startNumber.value + i;
+            return {
+                coordinates,
+                n,
+                callsign: `${prefix} ${n}`,
+                included: true
+            };
+        });
 
         await saveSettings();
 
@@ -1039,9 +1184,12 @@ async function confirm(): Promise<void> {
     error.value = '';
 
     try {
-        // Folder must exist before publish so dest.path can reference its UID
-        const folder = await ensureContainmentFolder(mapStore.mission);
+        // Folder must exist before publish so dest.path can reference its UID.
+        // Prefixed layers are created here, not while the prefix is being typed.
+        const folderName = generatedFolderName.value;
+        const folder = await ensureContainmentFolder(mapStore.mission, folderName);
         const missionGuid = mapStore.mission.guid;
+        const selectedMarkers = previewMarkers.value.filter((marker) => marker.included);
 
         // #region agent log
         // Console-only: remote CloudTAK CSP blocks localhost debug ingest
@@ -1055,14 +1203,11 @@ async function confirm(): Promise<void> {
             folderUid: folder.uid,
             missionGuid,
             wsOpen,
-            points: points.value.length,
+            points: selectedMarkers.length,
             rings: rings.value.length,
             shouldPostRing: shouldPostRing.value
         });
         // #endregion
-
-        // Re-check numbering at post time in case the mission changed
-        startNumber.value = nextLabelNumber(await mapStore.mission.feature.list(), labelPrefix.value);
 
         const sourceName = selected.value && typeof selected.value.properties.callsign === 'string'
             ? selected.value.properties.callsign.trim()
@@ -1114,13 +1259,13 @@ async function confirm(): Promise<void> {
             }
         }
 
-        for (let i = 0; i < points.value.length; i++) {
+        for (const marker of selectedMarkers) {
             await publishToFolder(
                 buildContainmentMarker(
-                    points.value[i],
-                    startNumber.value + i,
+                    marker.coordinates,
+                    marker.n,
                     config.value.color,
-                    labelPrefix.value
+                    generatedPrefix.value
                 ),
                 'marker'
             );
@@ -1130,14 +1275,16 @@ async function confirm(): Promise<void> {
         console.warn('[containment-debug] published', {
             postedCount: postedUids.length,
             rings: shouldPostRing.value ? rings.value.length : 0,
-            markers: points.value.length
+            markers: selectedMarkers.length
         });
         // #endregion
 
         // Backup: move any UIDs still at mission root (if dest.path was ignored)
         if (postedUids.length) {
             try {
-                await attachFeaturesToFolder(mapStore.mission, folder.uid, postedUids);
+                await attachFeaturesToFolder(mapStore.mission, folder.uid, postedUids, {
+                    folderName
+                });
             } catch (attachErr) {
                 // Features are already on the mission; folder filing is best-effort backup
                 console.warn(attachErr);
@@ -1149,7 +1296,7 @@ async function confirm(): Promise<void> {
 
         await mapStore.refresh();
 
-        postedCount.value = points.value.length;
+        postedCount.value = selectedMarkers.length;
         removePreview();
         stage.value = 'done';
     } catch (err) {
@@ -1163,7 +1310,8 @@ function reset(): void {
     removePreview();
     selected.value = undefined;
     rings.value = [];
-    points.value = [];
+    previewMarkers.value = [];
+    labelPrefixInput.value = '';
     postedCount.value = 0;
     error.value = '';
     stage.value = 'pick';
@@ -1173,14 +1321,32 @@ function reset(): void {
     });
 }
 
-function drawPreview(): void {
+function toggleAllMarkers(event: Event): void {
+    const checked = event.target instanceof HTMLInputElement
+        ? event.target.checked
+        : !allMarkersIncluded.value;
+
+    for (const marker of previewMarkers.value) {
+        marker.included = checked;
+    }
+
+    syncPreviewPoints();
+}
+
+function centerOnMarker(marker: PreviewMarker): void {
     const map = mapStore.map;
     if (!map) return;
 
-    removePreview();
+    const [lng, lat] = marker.coordinates;
+    map.easeTo({
+        center: [lng, lat],
+        duration: 500
+    });
+}
 
-    const collection = {
-        type: 'FeatureCollection' as const,
+function previewCollection(): FeatureCollection {
+    return {
+        type: 'FeatureCollection',
         features: [
             ...rings.value.map((ring) => ({
                 type: 'Feature' as const,
@@ -1190,20 +1356,41 @@ function drawPreview(): void {
                     coordinates: ring
                 }
             })),
-            ...points.value.map((point, i) => ({
+            ...previewMarkers.value.map((marker) => ({
                 type: 'Feature' as const,
-                properties: { role: 'point', label: String(startNumber.value + i) },
+                properties: {
+                    role: 'point',
+                    label: marker.callsign,
+                    included: marker.included
+                },
                 geometry: {
                     type: 'Point' as const,
-                    coordinates: point
+                    coordinates: marker.coordinates
                 }
             }))
         ]
     };
+}
+
+function syncPreviewPoints(): void {
+    const map = mapStore.map;
+    if (!map) return;
+
+    const source = map.getSource(PREVIEW_SOURCE);
+    if (source && source.type === 'geojson') {
+        (source as GeoJSONSource).setData(previewCollection());
+    }
+}
+
+function drawPreview(): void {
+    const map = mapStore.map;
+    if (!map) return;
+
+    removePreview();
 
     map.addSource(PREVIEW_SOURCE, {
         type: 'geojson',
-        data: collection
+        data: previewCollection()
     });
 
     map.addLayer({
@@ -1232,11 +1419,13 @@ function drawPreview(): void {
             'circle-radius': 7,
             'circle-color': config.value.color,
             'circle-stroke-color': '#ffffff',
-            'circle-stroke-width': 2
+            'circle-stroke-width': 2,
+            'circle-opacity': ['case', ['boolean', ['get', 'included'], true], 1, 0.35],
+            'circle-stroke-opacity': ['case', ['boolean', ['get', 'included'], true], 1, 0.45]
         }
     });
 
-    // Fit the map to the ring
+    // Fit the map to the ring. Later checkbox changes only update the source.
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const ring of rings.value) {
         for (const [x, y] of ring) {
@@ -1307,5 +1496,16 @@ async function saveSettings(): Promise<void> {
 
 .cursor-pointer {
     cursor: pointer;
+}
+
+.marker-link {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 0.15em;
+}
+
+.marker-link:hover,
+.marker-link:focus {
+    color: inherit;
 }
 </style>

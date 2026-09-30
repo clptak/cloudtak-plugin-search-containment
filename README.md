@@ -86,22 +86,30 @@ distance (must be greater than 0).
   tile seams.
 - **Color** — applied to the ring and markers.
 - **Trail Network** — only shown if more than one snapping basemap exists.
+- **Label Prefix** — optional. Leave it blank for `Containment {n}` (or
+  `Check Location {n}`) filed in a layer named `Containment`. A prefix such as
+  `North` names markers `North 1`, `North 2`, … and files them in
+  `North Containment`. The prefix is not saved between runs.
 
-Settings persist per device between runs.
+Settings other than the prefix persist per device between runs.
 
 ### 3. Preview
 
 The proposed ring (dashed line) and numbered crossing points render on the map
-without touching the mission, and the panel reports the label range (e.g.
+without touching the mission. The panel lists each marker: the name centers the
+map on that point, and the checkbox chooses whether it is posted. Every marker
+starts checked. Unchecked markers stay on the preview, drawn lighter, and are
+left off the mission. The label range is reported when all are selected (e.g.
 "Containment 4 through Containment 9"). Go back to adjust, or:
 
   <img width="452" height="185" alt="containment_preview" src="https://github.com/user-attachments/assets/27ab9650-93a3-4056-8970-4fa90045ea98" />
 
 ### 4. Post to Mission
 
-Markers — and the containment ring, when one was generated — are posted into the
-active DataSync mission and sync to all subscribers. Marker numbering is
-re-checked at post time in case the mission changed while previewing.
+Checked markers — and the containment ring, when one was generated — are posted
+into the active DataSync mission and sync to all subscribers. They are filed in
+the `Containment` layer, or in `{prefix} Containment` when a label prefix was
+set. Marker names are assigned at Generate and those exact names are posted.
 
 ## Install
 

@@ -11,6 +11,10 @@ import type { Feature } from '../../../src/types.ts';
 
 export const CONTAINMENT_RE = /^Containment (\d+)$/i;
 
+function escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /**
  * Scan existing mission features and return the next free
  * "{prefix} N" number (max + 1), so repeat runs never collide.
@@ -19,7 +23,7 @@ export function nextLabelNumber(
     features: Array<{ properties: { callsign?: unknown } }>,
     prefix: string
 ): number {
-    const re = new RegExp(`^${prefix} (\\d+)$`, 'i');
+    const re = new RegExp(`^${escapeRegExp(prefix)} (\\d+)$`, 'i');
 
     let max = 0;
 
