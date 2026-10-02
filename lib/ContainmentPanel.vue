@@ -30,20 +30,6 @@
                     desc='Loading'
                 />
 
-                <!-- No active DataSync mission -->
-                <TablerNone
-                    v-else-if='!mission'
-                    :create='false'
-                    label='Active DataSync'
-                >
-                    <template #actions>
-                        <div class='col-12 px-3 py-2 text-center text-secondary'>
-                            Subscribe to a Data Sync mission and make it active
-                            (Menu &rarr; Data Sync), then return here.
-                        </div>
-                    </template>
-                </TablerNone>
-
                 <!-- No snapping tileset on the server -->
                 <TablerNone
                     v-else-if='basemaps.length === 0'
@@ -61,7 +47,17 @@
 
                 <!-- Step 1: pick the source feature -->
                 <template v-else-if='stage === "pick"'>
-                    <div class='col-12 py-2 text-secondary small'>
+                    <TablerInlineAlert
+                        v-if='!mission'
+                        class='mb-2'
+                        severity='info'
+                        title='No Active DataSync'
+                        description='Use a Manual Point below. You can generate and preview without a DataSync; posting needs one to be active (Menu → Data Sync).'
+                    />
+                    <div
+                        v-else
+                        class='col-12 py-2 text-secondary small'
+                    >
                         Select a shape or line from
                         <span
                             class='fw-bold'
@@ -71,7 +67,7 @@
                     </div>
 
                     <TablerNone
-                        v-if='sources.length === 0'
+                        v-if='mission && sources.length === 0'
                         :create='false'
                         label='Eligible Features'
                     >
@@ -251,7 +247,41 @@
                             </template>
 
                             <div class='row g-2'>
-                                <template v-if='mode !== "check"'>
+                                <div
+                                    v-if='mode !== "check"'
+                                    class='col-12'
+                                >
+                                    <div
+                                        class='btn-group w-100'
+                                        role='group'
+                                        aria-label='Containment method'
+                                    >
+                                        <button
+                                            type='button'
+                                            class='btn'
+                                            :class='method === "distance" ? "btn-primary" : "btn-secondary"'
+                                            @click='method = "distance"'
+                                        >
+                                            Distance
+                                        </button>
+                                        <button
+                                            type='button'
+                                            class='btn'
+                                            :class='method === "wisar" ? "btn-primary" : "btn-secondary"'
+                                            :disabled='!wisarStart.ok'
+                                            @click='method = "wisar"'
+                                        >
+                                            WiSAR Travel Time
+                                        </button>
+                                    </div>
+                                    <div
+                                        v-if='!wisarStart.ok && wisarStart.reason'
+                                        class='text-secondary small pt-1'
+                                        v-text='wisarStart.reason'
+                                    />
+                                </div>
+
+                                <template v-if='mode !== "check" && method === "distance"'>
                                     <div class='col-7'>
                                         <TablerInput
                                             v-model.number='config.distance'
@@ -269,6 +299,33 @@
                                         />
                                     </div>
                                 </template>
+
+                                <div
+                                    v-if='mode !== "check" && method === "wisar"'
+                                    class='col-12 d-flex flex-column gap-1'
+                                >
+                                    <div
+                                        class='text-secondary small'
+                                        v-text='wisarStartLabel'
+                                    />
+                                    <div class='text-secondary small'>
+                                        WiSAR server:
+                                        <span
+                                            class='fw-bold'
+                                            v-text='wisarServer.url'
+                                        />
+                                        <span v-text='wisarServerSourceLabel' />
+                                    </div>
+                                    <div
+                                        v-if='wisarStatusText'
+                                        class='small'
+                                        :class='wisarStatusClass'
+                                        v-text='wisarStatusText'
+                                    />
+                                    <div class='text-secondary small'>
+                                        Travel Time settings (speed and up to 3 intervals) and the WiSAR run come in the next build step.
+                                    </div>
+                                </div>
 
                                 <div class='col-7'>
                                     <TablerInput
@@ -331,7 +388,7 @@
                             <button
                                 type='button'
                                 class='btn btn-primary ms-auto'
-                                :disabled='generating || !distanceValid'
+                                :disabled='generating || !canGenerate'
                                 @click='generate'
                             >
                                 <span
@@ -448,6 +505,13 @@
                                 />
                                 Post to Mission
                             </button>
+                        </div>
+                        <div
+                            v-if='!mission'
+                            class='text-secondary small pt-2 text-end'
+                        >
+                            Make a DataSync active (Menu &rarr; Data Sync) to post. The preview stays here, and
+                            marker numbers update to follow that DataSync&rsquo;s existing markers.
                         </div>
                     </div>
                 </template>
@@ -750,11 +814,12 @@ import {
     IconBarrierBlock
 } from '@tabler/icons-vue';
 import type { GeoJSONSource, MapMouseEvent } from 'maplibre-gl';
+import { getRuntimeToken } from '../../../src/std.ts';
 import { useMapStore } from '../../../src/stores/map.ts';
 import KV from '../../../src/base/kv.ts';
 import { OriginMode } from '../../../src/base/cot.ts';
 import type { Feature } from '../../../src/types.ts';
-import type { FeatureCollection, Position } from 'geojson';
+import type { FeatureCollection, Geometry, Position } from 'geojson';
 import {
     toKilometers,
     buildRings,
@@ -780,6 +845,13 @@ import {
     withMissionFolderDest,
     attachFeaturesToFolder
 } from './folder.ts';
+import {
+    createWisarClient,
+    checkWisarConnection,
+    type ConnectionCheck
+} from './wisar.ts';
+import { currentWisarServer, type WisarServer } from './wisarServer.ts';
+import { wisarStartFor, type WisarStart } from './wisarSource.ts';
 
 const SETTINGS_KEY = 'search-containment:settings';
 const PREVIEW_SOURCE = 'search-containment-preview';
@@ -828,6 +900,18 @@ const selectAllBox = ref<HTMLInputElement | null>(null);
 // the geometry already exists in the mission, so don't repost it
 const shouldPostRing = ref(true);
 
+// Containment method (decision 17): a fixed distance, or WiSAR Travel Time
+// from a single point (the Manual Point or a circle's centre)
+const method = ref<'distance' | 'wisar'>('distance');
+const wisarServer = ref<WisarServer>(currentWisarServer());
+const wisarCheck = ref<ConnectionCheck | null>(null);
+const wisarChecking = ref(false);
+let wisarCheckAbort: AbortController | null = null;
+
+// False when markers were numbered with no active DataSync. They are
+// renumbered from the DataSync's existing markers once one is active.
+const numberedFromMission = ref(true);
+
 const config = ref({
     distance: 1,
     unit: 'miles' as DistanceUnit,
@@ -851,6 +935,52 @@ const distanceValid = computed(() => {
     return config.value.distance >= 0;
 });
 
+const wisarStart = computed<WisarStart>(() => {
+    if (!selected.value) return { ok: false, reason: '' };
+
+    return wisarStartFor({
+        geometry: selected.value.geometry as Geometry,
+        properties: selected.value.properties as Record<string, unknown>
+    });
+});
+
+const canGenerate = computed(() => {
+    if (mode.value === 'check' || method.value === 'distance') return distanceValid.value;
+
+    // WiSAR Travel Time runs from the next build step
+    return false;
+});
+
+const wisarStartLabel = computed(() => {
+    const start = wisarStart.value;
+    if (!start.ok) return '';
+
+    const [lon, lat] = start.point;
+    const where = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+    return start.kind === 'circle'
+        ? `Starts from the circle's centre (${where}).`
+        : `Starts from the point (${where}).`;
+});
+
+const wisarServerSourceLabel = computed(() => {
+    return wisarServer.value.source === 'incident-manager'
+        ? '(from Incident Manager settings)'
+        : '(default)';
+});
+
+const wisarStatusText = computed(() => {
+    if (wisarChecking.value) return 'Checking WiSAR…';
+    return wisarCheck.value ? wisarCheck.value.message : '';
+});
+
+const wisarStatusClass = computed(() => {
+    const status = wisarCheck.value?.status;
+    if (wisarChecking.value || !status) return 'text-secondary';
+    if (status === 'ok') return 'text-success';
+    if (status === 'degraded') return 'text-warning';
+    return 'text-danger';
+});
+
 function isLineGeometry(feat: Feature): boolean {
     return ['LineString', 'MultiLineString'].includes(feat.geometry.type);
 }
@@ -872,6 +1002,7 @@ const allMarkersIncluded = computed(() => {
 
 const canPost = computed(() => {
     if (posting.value) return false;
+    if (!mission.value) return false;
     if (previewMarkers.value.some((marker) => marker.included)) return true;
     return shouldPostRing.value && rings.value.length > 0;
 });
@@ -953,6 +1084,21 @@ watch(mission, () => {
     void softEnsureFolder();
 }, { immediate: true });
 
+watch(mission, () => {
+    renumberFromMission().catch((err) => {
+        error.value = err instanceof Error ? err.message : String(err);
+    });
+});
+
+watch(method, (value) => {
+    if (value === 'wisar') void checkWisar();
+});
+
+// A source WiSAR can't start from falls back to Distance
+watch(wisarStart, (start) => {
+    if (!start.ok && method.value === 'wisar') method.value = 'distance';
+});
+
 watch(previewMarkers, () => {
     const box = selectAllBox.value;
     if (!box) return;
@@ -968,6 +1114,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+    wisarCheckAbort?.abort();
     stopPicking();
     removePreview();
 });
@@ -1058,6 +1205,9 @@ async function reload(): Promise<void> {
         }
 
         await loadSources(true);
+
+        wisarServer.value = currentWisarServer();
+        if (method.value === 'wisar') void checkWisar();
     } catch (err) {
         error.value = err instanceof Error ? err.message : String(err);
     } finally {
@@ -1113,8 +1263,56 @@ function backToPick(): void {
     stage.value = 'pick';
 }
 
+/**
+ * Is WiSAR reachable at the server from Incident Manager's settings (or the
+ * default), and does it accept this CloudTAK session?
+ */
+async function checkWisar(): Promise<void> {
+    wisarCheckAbort?.abort();
+    const abort = new AbortController();
+    wisarCheckAbort = abort;
+
+    wisarServer.value = currentWisarServer();
+    wisarChecking.value = true;
+    wisarCheck.value = null;
+
+    try {
+        const client = createWisarClient({ baseUrl: wisarServer.value.url, getToken: getRuntimeToken });
+        const result = await checkWisarConnection(client, abort.signal);
+        if (!abort.signal.aborted) wisarCheck.value = result;
+    } catch (err) {
+        if (!abort.signal.aborted) {
+            wisarCheck.value = { status: 'error', message: err instanceof Error ? err.message : String(err) };
+        }
+    } finally {
+        if (wisarCheckAbort === abort) wisarChecking.value = false;
+    }
+}
+
+/**
+ * Markers numbered with no active DataSync start at 1. Once a DataSync is
+ * active, number them after its existing "{prefix} n" markers instead.
+ */
+async function renumberFromMission(): Promise<void> {
+    if (!mapStore.mission || numberedFromMission.value) return;
+    if (stage.value !== 'preview' || !previewMarkers.value.length) return;
+
+    const prefix = generatedPrefix.value;
+    const start = nextLabelNumber(await mapStore.mission.feature.list(), prefix);
+
+    startNumber.value = start;
+    previewMarkers.value = previewMarkers.value.map((marker, i) => ({
+        ...marker,
+        n: start + i,
+        callsign: `${prefix} ${start + i}`
+    }));
+    numberedFromMission.value = true;
+
+    syncPreviewPoints();
+}
+
 async function generate(): Promise<void> {
-    if (!selected.value || !mapStore.mission) return;
+    if (!selected.value) return;
 
     generating.value = true;
     error.value = '';
@@ -1146,7 +1344,9 @@ async function generate(): Promise<void> {
             : sortClockwise(clustered);
 
         const prefix = labelPrefix.value;
-        startNumber.value = nextLabelNumber(await mapStore.mission.feature.list(), prefix);
+        const missionFeatures = mapStore.mission ? await mapStore.mission.feature.list() : [];
+        numberedFromMission.value = !!mapStore.mission;
+        startNumber.value = nextLabelNumber(missionFeatures, prefix);
         generatedPrefix.value = prefix;
         generatedFolderName.value = containmentFolderName(labelPrefixInput.value);
 
@@ -1184,6 +1384,9 @@ async function confirm(): Promise<void> {
     error.value = '';
 
     try {
+        // In case the DataSync became active after Generate
+        await renumberFromMission();
+
         // Folder must exist before publish so dest.path can reference its UID.
         // Prefixed layers are created here, not while the prefix is being typed.
         const folderName = generatedFolderName.value;
