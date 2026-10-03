@@ -382,8 +382,158 @@
                                         :class='wisarStatusClass'
                                         v-text='wisarStatusText'
                                     />
+
+                                    <p class='text-uppercase text-white-50 small mb-0 mt-2'>
+                                        Flat-Ground Travel Speed
+                                    </p>
+                                    <div class='d-flex gap-2 align-items-center'>
+                                        <input
+                                            v-model='speedText'
+                                            type='number'
+                                            class='form-control'
+                                            :placeholder='speedUnit === "kmh" ? "1.6" : "1.0"'
+                                            step='0.1'
+                                            min='0.1'
+                                            :max='speedUnit === "kmh" ? 20 : 12.4'
+                                            aria-label='Travel speed'
+                                            :disabled='wisarBusy'
+                                        >
+                                        <div
+                                            class='btn-group'
+                                            role='group'
+                                            aria-label='Speed unit'
+                                        >
+                                            <button
+                                                v-for='u of speedUnits'
+                                                :key='u'
+                                                type='button'
+                                                class='btn'
+                                                :class='speedUnit === u ? "btn-primary" : "btn-secondary"'
+                                                :disabled='wisarBusy'
+                                                @click='setSpeedUnit(u)'
+                                            >
+                                                {{ unitLabel(u) }}
+                                            </button>
+                                        </div>
+                                    </div>
                                     <div class='text-secondary small'>
-                                        Travel Time settings (speed and up to 3 intervals) and the WiSAR run come in the next build step.
+                                        Assumed speed on flat, unobstructed terrain. The model adjusts for slope,
+                                        land cover, and trail networks.
+                                    </div>
+                                    <div class='d-flex flex-wrap gap-2'>
+                                        <button
+                                            v-for='p of SPEED_PRESETS'
+                                            :key='p.label'
+                                            type='button'
+                                            class='btn btn-sm btn-secondary wisar-preset'
+                                            :disabled='wisarBusy'
+                                            @click='applySpeedPreset(p.mph)'
+                                        >
+                                            {{ p.mph.toFixed(1) }} mph<br><span class='small'>{{ p.label }}</span>
+                                        </button>
+                                    </div>
+
+                                    <p class='text-uppercase text-white-50 small mb-0 mt-2'>
+                                        Time Intervals (hours, up to {{ SC_MAX_INTERVALS }})
+                                    </p>
+                                    <div class='d-flex flex-wrap gap-3'>
+                                        <label
+                                            v-for='h of INTERVAL_OPTIONS'
+                                            :key='h'
+                                            class='form-check form-check-inline mb-0'
+                                        >
+                                            <input
+                                                v-model='intervals'
+                                                type='checkbox'
+                                                class='form-check-input'
+                                                :value='h'
+                                                :disabled='wisarBusy || intervalLocked(intervals, h)'
+                                            >
+                                            <span class='form-check-label'>{{ h }}h</span>
+                                        </label>
+                                    </div>
+                                    <div class='text-secondary small'>
+                                        Each interval generates a contour showing the outer boundary of where the
+                                        subject could physically be after that amount of time.
+                                    </div>
+
+                                    <div class='d-flex gap-2 mt-2'>
+                                        <button
+                                            type='button'
+                                            class='btn btn-primary flex-grow-1'
+                                            :disabled='!!wisarProblem || wisarBusy || contoursLoading'
+                                            @click='runWisar'
+                                        >
+                                            {{ wisarBusy ? 'Running…' : 'Run Travel Time Analysis' }}
+                                        </button>
+                                        <button
+                                            v-if='wisarBusy'
+                                            type='button'
+                                            class='btn btn-secondary'
+                                            @click='cancelWisar'
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                    <div
+                                        v-if='wisarProblem && !wisarBusy'
+                                        class='text-secondary small text-center'
+                                        v-text='wisarProblem'
+                                    />
+
+                                    <WisarJobStatus
+                                        :phase='wisarPhase'
+                                        :job='wisarJobState'
+                                        :error='wisarJobError'
+                                        :started-at='wisarStartedAt'
+                                        :now='wisarNow'
+                                    />
+                                    <div
+                                        v-if='contoursLoading'
+                                        class='text-secondary small'
+                                    >
+                                        Loading contours…
+                                    </div>
+                                    <div
+                                        v-if='contoursError'
+                                        class='text-danger small'
+                                        v-text='contoursError'
+                                    />
+
+                                    <template v-if='contourRows.length'>
+                                        <p class='text-uppercase text-white-50 small mb-0 mt-2'>
+                                            Contour for Containment
+                                        </p>
+                                        <label
+                                            v-for='f of contourRows'
+                                            :key='contourKey(f)'
+                                            class='form-check mb-0'
+                                        >
+                                            <input
+                                                v-model='contourChoice'
+                                                type='radio'
+                                                class='form-check-input'
+                                                name='search-containment-contour'
+                                                :value='contourKey(f)'
+                                            >
+                                            <span class='form-check-label'>
+                                                <span
+                                                    class='contour-swatch'
+                                                    :style='{ background: f.properties.stroke }'
+                                                />
+                                                {{ contourName(f) }}
+                                            </span>
+                                        </label>
+                                        <div class='text-secondary small'>
+                                            Every contour is previewed on the map; the chosen one is drawn heavier.
+                                            Generating markers on it comes in the next build step.
+                                        </div>
+                                    </template>
+                                    <div
+                                        v-else-if='wisarContours'
+                                        class='text-secondary small'
+                                    >
+                                        WiSAR produced no contours for this point.
                                     </div>
                                 </div>
 
@@ -913,11 +1063,35 @@ import {
 import { currentWisarServer, type WisarServer } from './wisarServer.ts';
 import { wisarStartFor, type WisarStart } from './wisarSource.ts';
 import { pointMarkerOptions, type MarkerOption } from './wisarMarkers.ts';
+import { useWisarJob } from './useWisarJob.ts';
+import WisarJobStatus from './WisarJobStatus.vue';
+import {
+    INTERVAL_OPTIONS,
+    SPEED_PRESETS,
+    convertSpeedText,
+    travelTimeProblem,
+    travelTimeRequest,
+    unitLabel,
+    type SpeedUnit
+} from './wisarTravelTime.ts';
+import {
+    SC_DEFAULT_INTERVALS,
+    SC_MAX_INTERVALS,
+    contourBounds,
+    contourKey,
+    contourName,
+    intervalLocked,
+    sortedContours
+} from './wisarContours.ts';
+import type { ContourCollection } from './wisar.ts';
 
 const SETTINGS_KEY = 'search-containment:settings';
 const PREVIEW_SOURCE = 'search-containment-preview';
 const PREVIEW_LINE = 'search-containment-preview-line';
 const PREVIEW_POINTS = 'search-containment-preview-points';
+const WISAR_PREVIEW_SOURCE = 'search-containment-wisar';
+const WISAR_PREVIEW_FILL = 'search-containment-wisar-fill';
+const WISAR_PREVIEW_LINE = 'search-containment-wisar-line';
 
 const mapStore = useMapStore();
 
@@ -973,6 +1147,28 @@ let wisarCheckAbort: AbortController | null = null;
 // renumbered from the DataSync's existing markers once one is active.
 const numberedFromMission = ref(true);
 
+// WiSAR Travel Time form, run and contours (decision 17)
+const speedUnits: SpeedUnit[] = ['mph', 'kmh'];
+const speedText = ref<string | number>('');
+const speedUnit = ref<SpeedUnit>('mph');
+const intervals = ref<number[]>([...SC_DEFAULT_INTERVALS]);
+const wisarContours = ref<ContourCollection | null>(null);
+const contourChoice = ref('');
+const contoursLoading = ref(false);
+const contoursError = ref('');
+
+const wisarJob = useWisarJob(() => createWisarClient({
+    baseUrl: wisarServer.value.url,
+    getToken: getRuntimeToken
+}));
+const {
+    job: wisarJobState,
+    phase: wisarPhase,
+    error: wisarJobError,
+    startedAt: wisarStartedAt,
+    now: wisarNow
+} = wisarJob;
+
 // Point markers in the active DataSync, offered as starting points
 const missionPoints = ref<Feature[]>([]);
 const markerOptions = ref<MarkerOption[]>([]);
@@ -1006,6 +1202,20 @@ const wisarStart = computed<WisarStart>(() => {
 
     return wisarStartFor({ geometry: selected.value.geometry as Geometry });
 });
+
+const wisarBusy = computed(() => ['submitting', 'queued', 'running'].includes(wisarPhase.value));
+
+const wisarProblem = computed(() => {
+    const start = wisarStart.value;
+    return travelTimeProblem(
+        start.ok ? { lat: start.point[1], lon: start.point[0] } : null,
+        String(speedText.value ?? ''),
+        speedUnit.value,
+        intervals.value
+    );
+});
+
+const contourRows = computed(() => wisarContours.value ? sortedContours(wisarContours.value) : []);
 
 const canGenerate = computed(() => {
     if (mode.value === 'check' || method.value === 'distance') return distanceValid.value;
@@ -1159,7 +1369,22 @@ watch(mission, () => {
 });
 
 watch(method, (value) => {
-    if (value === 'wisar') void checkWisar();
+    if (value === 'wisar') {
+        void checkWisar();
+        drawWisarPreview(false);
+    } else {
+        removeWisarPreview();
+    }
+});
+
+// A new starting point (or none) discards the previous WiSAR run
+watch(selected, () => {
+    wisarJob.reset();
+    clearWisarResult();
+});
+
+watch(contourChoice, () => {
+    drawWisarPreview(false);
 });
 
 // A source WiSAR can't start from falls back to Distance
@@ -1183,6 +1408,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
     wisarCheckAbort?.abort();
+    removeWisarPreview();
     stopPicking();
     removePreview();
 });
@@ -1378,6 +1604,126 @@ async function checkWisar(): Promise<void> {
     } finally {
         if (wisarCheckAbort === abort) wisarChecking.value = false;
     }
+}
+
+function setSpeedUnit(next: SpeedUnit): void {
+    speedText.value = convertSpeedText(String(speedText.value ?? ''), speedUnit.value, next);
+    speedUnit.value = next;
+}
+
+function applySpeedPreset(mph: number): void {
+    speedUnit.value = 'mph';
+    speedText.value = mph.toFixed(1);
+}
+
+/** Run WiSAR Travel Time from the starting point, then load its contours. */
+async function runWisar(): Promise<void> {
+    const start = wisarStart.value;
+    if (!start.ok || wisarProblem.value) return;
+
+    clearWisarResult();
+    const body = travelTimeRequest(
+        { lat: start.point[1], lon: start.point[0] },
+        String(speedText.value),
+        speedUnit.value,
+        intervals.value
+    );
+
+    const final = await wisarJob.run((client, signal) => client.submitTravelTime(body, signal));
+    const client = wisarJob.client();
+    if (!final || final.status !== 'succeeded' || !client) return;
+
+    contoursLoading.value = true;
+    try {
+        const fc = await client.contours(final);
+        // Ignore a result for a starting point the user has since changed
+        if (wisarJobState.value?.id !== final.id) return;
+        wisarContours.value = fc;
+        drawWisarPreview(true);
+    } catch (err) {
+        contoursError.value = err instanceof Error ? err.message : String(err);
+    } finally {
+        contoursLoading.value = false;
+    }
+}
+
+function cancelWisar(): void {
+    void wisarJob.cancel();
+}
+
+function clearWisarResult(): void {
+    wisarContours.value = null;
+    contourChoice.value = '';
+    contoursError.value = '';
+    removeWisarPreview();
+}
+
+function wisarPreviewData(): FeatureCollection {
+    const fc = wisarContours.value;
+    return {
+        type: 'FeatureCollection',
+        features: (fc ? fc.features : []).map((f) => ({
+            type: 'Feature' as const,
+            geometry: f.geometry as unknown as Geometry,
+            properties: {
+                stroke: f.properties.stroke,
+                fill: f.properties.fill,
+                chosen: contourKey(f) === contourChoice.value
+            }
+        }))
+    };
+}
+
+/** All contours on the map; the chosen one heavier. Nothing is written to the mission. */
+function drawWisarPreview(fit: boolean): void {
+    const map = mapStore.map;
+    if (!map || !wisarContours.value || method.value !== 'wisar') return;
+
+    const source = map.getSource(WISAR_PREVIEW_SOURCE);
+    if (source && source.type === 'geojson') {
+        (source as GeoJSONSource).setData(wisarPreviewData());
+    } else {
+        map.addSource(WISAR_PREVIEW_SOURCE, {
+            type: 'geojson',
+            data: wisarPreviewData()
+        });
+
+        map.addLayer({
+            id: WISAR_PREVIEW_FILL,
+            type: 'fill',
+            source: WISAR_PREVIEW_SOURCE,
+            paint: {
+                'fill-color': ['coalesce', ['get', 'fill'], ['get', 'stroke'], '#00bcd4'],
+                'fill-opacity': ['case', ['boolean', ['get', 'chosen'], false], 0.2, 0.06]
+            }
+        });
+
+        map.addLayer({
+            id: WISAR_PREVIEW_LINE,
+            type: 'line',
+            source: WISAR_PREVIEW_SOURCE,
+            paint: {
+                'line-color': ['coalesce', ['get', 'stroke'], '#00bcd4'],
+                'line-width': ['case', ['boolean', ['get', 'chosen'], false], 4, 2],
+                'line-opacity': ['case', ['boolean', ['get', 'chosen'], false], 1, 0.6]
+            }
+        });
+    }
+
+    if (fit) {
+        const b = contourBounds(wisarContours.value);
+        if (b) map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 80, duration: 500 });
+    }
+}
+
+function removeWisarPreview(): void {
+    const map = mapStore.map;
+    if (!map) return;
+
+    for (const layer of [WISAR_PREVIEW_LINE, WISAR_PREVIEW_FILL]) {
+        if (map.getLayer(layer)) map.removeLayer(layer);
+    }
+    if (map.getSource(WISAR_PREVIEW_SOURCE)) map.removeSource(WISAR_PREVIEW_SOURCE);
 }
 
 /**
@@ -1801,5 +2147,19 @@ async function saveSettings(): Promise<void> {
 .marker-link:hover,
 .marker-link:focus {
     color: inherit;
+}
+
+.wisar-preset {
+    line-height: 1.2;
+    min-width: 5.5rem;
+}
+
+.contour-swatch {
+    display: inline-block;
+    width: 0.8rem;
+    height: 0.8rem;
+    margin-right: 0.25rem;
+    border-radius: 2px;
+    vertical-align: middle;
 }
 </style>
