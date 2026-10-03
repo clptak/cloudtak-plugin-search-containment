@@ -425,11 +425,12 @@
                                             v-for='p of SPEED_PRESETS'
                                             :key='p.label'
                                             type='button'
-                                            class='btn btn-sm btn-secondary wisar-preset'
+                                            class='btn btn-sm btn-outline-secondary wisar-preset d-flex flex-column align-items-center'
                                             :disabled='wisarBusy'
                                             @click='applySpeedPreset(p.mph)'
                                         >
-                                            {{ p.mph.toFixed(1) }} mph<br><span class='small'>{{ p.label }}</span>
+                                            <span class='fw-bold'>{{ p.mph.toFixed(1) }} mph</span>
+                                            <span class='small text-muted fw-normal'>{{ p.label }}</span>
                                         </button>
                                     </div>
 
@@ -526,7 +527,7 @@
                                         </label>
                                         <div class='text-secondary small'>
                                             Every contour is previewed on the map; the chosen one is drawn heavier.
-                                            Generating markers on it comes in the next build step.
+                                            Generate finds trail crossings on the chosen contour.
                                         </div>
                                     </template>
                                     <div
@@ -624,7 +625,7 @@
                             v-else-if='shouldPostRing'
                             severity='warning'
                             title='No Crossings'
-                            description='No trail crossings were found on the ring. You can still post the ring itself, or go back and adjust the distance.'
+                            description='No trail crossings were found on the ring. You can still post the ring itself, or go back and adjust the settings.'
                         />
                         <TablerInlineAlert
                             v-else
@@ -1080,6 +1081,8 @@ import {
     contourBounds,
     contourKey,
     contourName,
+    contourRingName,
+    contourRings,
     intervalLocked,
     sortedContours
 } from './wisarContours.ts';
@@ -1157,6 +1160,10 @@ const contourChoice = ref('');
 const contoursLoading = ref(false);
 const contoursError = ref('');
 
+// Set at Generate: the rings came from a WiSAR contour, and their posted names
+const generatedFromWisar = ref(false);
+const ringNames = ref<string[]>([]);
+
 const wisarJob = useWisarJob(() => createWisarClient({
     baseUrl: wisarServer.value.url,
     getToken: getRuntimeToken
@@ -1217,11 +1224,15 @@ const wisarProblem = computed(() => {
 
 const contourRows = computed(() => wisarContours.value ? sortedContours(wisarContours.value) : []);
 
+const chosenContour = computed(() => {
+    return contourRows.value.find((f) => contourKey(f) === contourChoice.value);
+});
+
 const canGenerate = computed(() => {
     if (mode.value === 'check' || method.value === 'distance') return distanceValid.value;
 
-    // WiSAR Travel Time runs from the next build step
-    return false;
+    // WiSAR: a finished run and a contour picked
+    return !!chosenContour.value && !wisarBusy.value && !contoursLoading.value;
 });
 
 const wisarStartLabel = computed(() => {
@@ -1313,12 +1324,14 @@ const doneDescription = computed(() => {
     const folder = generatedFolderName.value;
     const mission = missionName.value;
 
+    const ringNoun = generatedFromWisar.value ? 'the travel-time contour' : 'the containment ring';
+
     if (postedCount.value === 0 && shouldPostRing.value) {
-        return `Posted the containment ring to ${folder} in ${mission}.`;
+        return `Posted ${ringNoun} to ${folder} in ${mission}.`;
     }
 
     const plural = postedCount.value === 1 ? '' : 's';
-    const ring = shouldPostRing.value ? ' and the containment ring' : '';
+    const ring = shouldPostRing.value ? ` and ${ringNoun}` : '';
     return `Posted ${postedCount.value} ${generatedPrefix.value} marker${plural}${ring} to ${folder} in ${mission}.`;
 });
 
@@ -1767,7 +1780,25 @@ async function generate(): Promise<void> {
 
         shouldPostRing.value = !lineAsIs;
 
-        rings.value = buildRings(selected.value.geometry, distanceKm);
+        const sourceLabel = typeof selected.value.properties.callsign === 'string'
+            ? selected.value.properties.callsign.trim()
+            : '';
+        const contour = chosenContour.value;
+
+        if (mode.value !== 'check' && method.value === 'wisar') {
+            // Outer boundary of every part of the chosen contour, holes ignored
+            if (!contour) throw new Error('Pick a contour first');
+            rings.value = contourRings(contour);
+            if (!rings.value.length) throw new Error('The chosen contour has no usable outline');
+            generatedFromWisar.value = true;
+            ringNames.value = rings.value.map((_, i) => contourRingName(sourceLabel, contour, i, rings.value.length));
+        } else {
+            rings.value = buildRings(selected.value.geometry, distanceKm);
+            generatedFromWisar.value = false;
+            ringNames.value = rings.value.map((_, i) => (sourceLabel ? sourceLabel + ' ' : '')
+                + 'Containment Ring'
+                + (rings.value.length > 1 ? ` ${i + 1}` : ''));
+        }
 
         const trails = await fetchTrailsAlongRings(basemap, rings.value);
 
@@ -1799,6 +1830,7 @@ async function generate(): Promise<void> {
 
         await saveSettings();
 
+        removeWisarPreview();
         drawPreview();
         stage.value = 'preview';
     } catch (err) {
@@ -1812,6 +1844,7 @@ function cancelPreview(): void {
     removePreview();
     error.value = '';
     stage.value = 'configure';
+    drawWisarPreview(false);
 }
 
 async function confirm(): Promise<void> {
@@ -1888,9 +1921,8 @@ async function confirm(): Promise<void> {
 
         if (shouldPostRing.value) {
             for (let i = 0; i < rings.value.length; i++) {
-                const callsign = (sourceName ? sourceName + ' ' : '')
-                    + 'Containment Ring'
-                    + (rings.value.length > 1 ? ` ${i + 1}` : '');
+                const callsign = ringNames.value[i]
+                    || ((sourceName ? sourceName + ' ' : '') + 'Containment Ring');
 
                 await publishToFolder(
                     buildRingFeature(rings.value[i], callsign, config.value.color),
