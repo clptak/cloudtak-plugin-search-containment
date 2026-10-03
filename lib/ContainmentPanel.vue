@@ -63,7 +63,7 @@
                             class='fw-bold'
                             v-text='missionName'
                         />
-                        to find trail crossings for, or use a Manual Point below.
+                        to find trail crossings for, or start from a marker or a Manual Point below.
                     </div>
 
                     <TablerNone
@@ -118,6 +118,66 @@
                                 />
                             </div>
                         </StandardItem>
+                    </div>
+
+                    <!-- DataSync marker as the starting point -->
+                    <div
+                        v-if='mission'
+                        class='col-12 pb-2'
+                    >
+                        <TablerBorder
+                            class='cloudtak-bg text-white'
+                            :fill-height='false'
+                            gap='sm'
+                        >
+                            <template #label>
+                                <div class='d-flex align-items-center gap-2 w-100'>
+                                    <p class='text-uppercase text-white-50 small mb-0'>
+                                        DataSync Marker
+                                    </p>
+                                    <span class='text-secondary small ms-auto normal-case'>
+                                        Start from ICP, LKP, IPP&hellip;
+                                    </span>
+                                </div>
+                            </template>
+
+                            <div
+                                v-if='!markerOptions.length'
+                                class='text-secondary small'
+                            >
+                                No point markers in this DataSync. Use a Manual Point below.
+                            </div>
+                            <template v-else>
+                                <label
+                                    class='form-label small text-secondary mb-1'
+                                    for='search-containment-marker'
+                                >
+                                    Marker
+                                </label>
+                                <select
+                                    id='search-containment-marker'
+                                    v-model='markerId'
+                                    class='form-select'
+                                >
+                                    <option
+                                        v-for='opt of markerOptions'
+                                        :key='opt.id'
+                                        :value='opt.id'
+                                        v-text='opt.label'
+                                    />
+                                </select>
+                                <div class='d-flex pt-3'>
+                                    <button
+                                        type='button'
+                                        class='btn btn-primary ms-auto'
+                                        :disabled='!markerId'
+                                        @click='useMarker'
+                                    >
+                                        Use This Marker
+                                    </button>
+                                </div>
+                            </template>
+                        </TablerBorder>
                     </div>
 
                     <!-- Manual point entry (collapsed by default) -->
@@ -314,7 +374,7 @@
                                             class='fw-bold'
                                             v-text='wisarServer.url'
                                         />
-                                        <span v-text='wisarServerSourceLabel' />
+                                        {{ ' ' }}<span v-text='wisarServerSourceLabel' />
                                     </div>
                                     <div
                                         v-if='wisarStatusText'
@@ -852,6 +912,7 @@ import {
 } from './wisar.ts';
 import { currentWisarServer, type WisarServer } from './wisarServer.ts';
 import { wisarStartFor, type WisarStart } from './wisarSource.ts';
+import { pointMarkerOptions, type MarkerOption } from './wisarMarkers.ts';
 
 const SETTINGS_KEY = 'search-containment:settings';
 const PREVIEW_SOURCE = 'search-containment-preview';
@@ -901,7 +962,7 @@ const selectAllBox = ref<HTMLInputElement | null>(null);
 const shouldPostRing = ref(true);
 
 // Containment method (decision 17): a fixed distance, or WiSAR Travel Time
-// from a single point (the Manual Point or a circle's centre)
+// from a single point (the Manual Point or a DataSync marker)
 const method = ref<'distance' | 'wisar'>('distance');
 const wisarServer = ref<WisarServer>(currentWisarServer());
 const wisarCheck = ref<ConnectionCheck | null>(null);
@@ -911,6 +972,11 @@ let wisarCheckAbort: AbortController | null = null;
 // False when markers were numbered with no active DataSync. They are
 // renumbered from the DataSync's existing markers once one is active.
 const numberedFromMission = ref(true);
+
+// Point markers in the active DataSync, offered as starting points
+const missionPoints = ref<Feature[]>([]);
+const markerOptions = ref<MarkerOption[]>([]);
+const markerId = ref('');
 
 const config = ref({
     distance: 1,
@@ -938,10 +1004,7 @@ const distanceValid = computed(() => {
 const wisarStart = computed<WisarStart>(() => {
     if (!selected.value) return { ok: false, reason: '' };
 
-    return wisarStartFor({
-        geometry: selected.value.geometry as Geometry,
-        properties: selected.value.properties as Record<string, unknown>
-    });
+    return wisarStartFor({ geometry: selected.value.geometry as Geometry });
 });
 
 const canGenerate = computed(() => {
@@ -956,10 +1019,7 @@ const wisarStartLabel = computed(() => {
     if (!start.ok) return '';
 
     const [lon, lat] = start.point;
-    const where = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
-    return start.kind === 'circle'
-        ? `Starts from the circle's centre (${where}).`
-        : `Starts from the point (${where}).`;
+    return `Starts from the point (${lat.toFixed(5)}, ${lon.toFixed(5)}).`;
 });
 
 const wisarServerSourceLabel = computed(() => {
@@ -1058,7 +1118,9 @@ const sourceModeLabel = computed(() => {
     if (mode.value === 'check') {
         return 'Location check — line crossings with the trail network';
     } else if (selected.value.geometry.type === 'Point') {
-        return 'Range ring around point';
+        return method.value === 'wisar'
+            ? 'WiSAR Travel Time from point'
+            : 'Range ring around point';
     } else if (isLineGeometry(selected.value)) {
         return 'Trail crossings along the line (distance 0 = the line itself)';
     }
@@ -1085,6 +1147,12 @@ watch(mission, () => {
 }, { immediate: true });
 
 watch(mission, () => {
+    if (stage.value === 'pick') {
+        loadSources().catch((err) => {
+            error.value = err instanceof Error ? err.message : String(err);
+        });
+    }
+
     renumberFromMission().catch((err) => {
         error.value = err instanceof Error ? err.message : String(err);
     });
@@ -1218,6 +1286,9 @@ async function reload(): Promise<void> {
 async function loadSources(refresh = false): Promise<void> {
     if (!mapStore.mission) {
         sources.value = [];
+        missionPoints.value = [];
+        markerOptions.value = [];
+        markerId.value = '';
         return;
     }
 
@@ -1229,6 +1300,26 @@ async function loadSources(refresh = false): Promise<void> {
     sources.value = feats.filter((feat) => {
         return ['Polygon', 'MultiPolygon', 'LineString', 'MultiLineString'].includes(feat.geometry.type);
     });
+
+    // Point markers, offered as WiSAR starting points
+    missionPoints.value = feats.filter((feat) => feat.geometry.type === 'Point');
+    markerOptions.value = pointMarkerOptions(missionPoints.value);
+    if (!markerOptions.value.some((opt) => opt.id === markerId.value)) {
+        markerId.value = markerOptions.value.length ? markerOptions.value[0].id : '';
+    }
+}
+
+function useMarker(): void {
+    const feat = missionPoints.value.find((point) => String(point.id) === markerId.value);
+    if (!feat) return;
+
+    stopPicking();
+    selected.value = feat;
+    mode.value = 'containment';
+    // Picked as a WiSAR starting point; Distance is one click away
+    method.value = 'wisar';
+    error.value = '';
+    stage.value = 'configure';
 }
 
 function selectSource(feat: Feature): void {
