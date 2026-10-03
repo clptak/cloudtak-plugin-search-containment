@@ -412,7 +412,7 @@
                                                 :disabled='wisarBusy'
                                                 @click='setSpeedUnit(u)'
                                             >
-                                                {{ unitLabel(u) }}
+                                                {{ speedUnitLabel(u) }}
                                             </button>
                                         </div>
                                     </div>
@@ -1071,7 +1071,7 @@ import {
     convertSpeedText,
     travelTimeProblem,
     travelTimeRequest,
-    unitLabel,
+    unitLabel as speedUnitLabel,
     type SpeedUnit
 } from './wisarTravelTime.ts';
 import {
