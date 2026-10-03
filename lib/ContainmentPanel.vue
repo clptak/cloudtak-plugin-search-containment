@@ -706,12 +706,25 @@
                             </button>
                             <button
                                 type='button'
-                                class='btn btn-primary ms-auto'
+                                class='btn btn-secondary ms-auto me-2'
+                                :disabled='!canPostToMap'
+                                title='Only on your map: saved to your own features, not sent to the TAK Server'
+                                @click='postToMap'
+                            >
+                                <span
+                                    v-if='posting && postingTarget === "map"'
+                                    class='spinner-border spinner-border-sm me-2'
+                                />
+                                Post to Map
+                            </button>
+                            <button
+                                type='button'
+                                class='btn btn-primary'
                                 :disabled='!canPost'
                                 @click='confirm'
                             >
                                 <span
-                                    v-if='posting'
+                                    v-if='posting && postingTarget === "mission"'
                                     class='spinner-border spinner-border-sm me-2'
                                 />
                                 Post to Mission
@@ -721,8 +734,9 @@
                             v-if='!mission'
                             class='text-secondary small pt-2 text-end'
                         >
-                            Make a DataSync active (Menu &rarr; Data Sync) to post. The preview stays here, and
-                            marker numbers update to follow that DataSync&rsquo;s existing markers.
+                            Post to Map keeps them on your map only. To post to the mission, make a DataSync
+                            active (Menu &rarr; Data Sync); the preview stays here, and marker numbers update to
+                            follow that DataSync&rsquo;s existing markers.
                         </div>
                     </div>
                 </template>
@@ -1164,6 +1178,9 @@ const contoursError = ref('');
 const generatedFromWisar = ref(false);
 const ringNames = ref<string[]>([]);
 
+// Where the last post went: the active DataSync, or only this user's map
+const postingTarget = ref<'mission' | 'map'>('mission');
+
 const wisarJob = useWisarJob(() => createWisarClient({
     baseUrl: wisarServer.value.url,
     getToken: getRuntimeToken
@@ -1320,9 +1337,17 @@ const previewInfoDescription = computed(() => {
     return `${total} trail crossing${plural} found. ${selected.length} selected to post.`;
 });
 
+const canPostToMap = computed(() => {
+    if (posting.value) return false;
+    if (previewMarkers.value.some((marker) => marker.included)) return true;
+    return shouldPostRing.value && rings.value.length > 0;
+});
+
 const doneDescription = computed(() => {
     const folder = generatedFolderName.value;
-    const mission = missionName.value;
+    const mission = postingTarget.value === 'map'
+        ? 'your own features (only you see them; not sent to the TAK Server)'
+        : missionName.value;
 
     const ringNoun = generatedFromWisar.value ? 'the travel-time contour' : 'the containment ring';
 
@@ -1847,10 +1872,63 @@ function cancelPreview(): void {
     drawWisarPreview(false);
 }
 
+/**
+ * Put the checked markers (and the ring) on this user's map only. Added
+ * without a mission origin and not authored, CloudTAK keeps them as the
+ * user's own features: drawn, saved to their profile, and not submitted to
+ * the TAK Server. Filed under the Containment folder name as their path.
+ */
+async function postToMap(): Promise<void> {
+    if (!canPostToMap.value) return;
+
+    posting.value = true;
+    postingTarget.value = 'map';
+    error.value = '';
+
+    try {
+        const path = `/${generatedFolderName.value}`;
+        const selectedMarkers = previewMarkers.value.filter((marker) => marker.included);
+
+        const sourceName = selected.value && typeof selected.value.properties.callsign === 'string'
+            ? selected.value.properties.callsign.trim()
+            : '';
+
+        if (shouldPostRing.value) {
+            for (let i = 0; i < rings.value.length; i++) {
+                const callsign = ringNames.value[i]
+                    || ((sourceName ? sourceName + ' ' : '') + 'Containment Ring');
+
+                await mapStore.worker.db.add({
+                    ...buildRingFeature(rings.value[i], callsign, config.value.color),
+                    path
+                });
+            }
+        }
+
+        for (const marker of selectedMarkers) {
+            await mapStore.worker.db.add({
+                ...buildContainmentMarker(marker.coordinates, marker.n, config.value.color, generatedPrefix.value),
+                path
+            });
+        }
+
+        await mapStore.refresh();
+
+        postedCount.value = selectedMarkers.length;
+        removePreview();
+        stage.value = 'done';
+    } catch (err) {
+        error.value = err instanceof Error ? err.message : String(err);
+    } finally {
+        posting.value = false;
+    }
+}
+
 async function confirm(): Promise<void> {
     if (!mapStore.mission) return;
 
     posting.value = true;
+    postingTarget.value = 'mission';
     error.value = '';
 
     try {
