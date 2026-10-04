@@ -853,161 +853,156 @@
                     </div>
                 </TablerModal>
 
-                <!-- Usage / help modal -->
-                <TablerModal
-                    v-if='showHelp'
-                    size='lg'
-                >
-                    <div class='modal-status bg-blue' />
-                    <button
-                        type='button'
-                        class='btn-close'
-                        aria-label='Close'
-                        @click='showHelp = false'
-                    />
-                    <div class='modal-header text-body'>
-                        <IconBarrierBlock
-                            :size='24'
-                            stroke='1'
-                            class='me-2'
-                        />
-                        <div class='modal-title'>
-                            Search Containment &mdash; Usage
-                        </div>
-                    </div>
+                <!-- Usage / help window (same layout as Incident Manager's reference windows) -->
+                <template v-if='showHelp'>
                     <div
-                        class='modal-body text-body overflow-auto help-modal'
-                        style='max-height: 65vh'
+                        class='modal modal-blur show d-block sc-help-modal'
+                        tabindex='-1'
+                        role='dialog'
+                        @click.self='showHelp = false'
                     >
-                        <TablerInlineAlert
-                            severity='info'
-                            title='Search Containment'
-                            description='Pick a source — a mission shape, a mission line, or a manually entered point — and the plugin finds every place the trail network crosses the resulting boundary, plots numbered markers, and posts them into the active DataSync mission.'
-                        />
-
-                        <TablerBorder
-                            class='cloudtak-bg text-white mt-3'
-                            :fill-height='false'
-                            gap='sm'
+                        <div
+                            class='modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable'
+                            role='document'
                         >
-                            <template #label>
-                                <p class='text-uppercase text-white-50 small mb-0'>
-                                    Pick A Source
-                                </p>
-                            </template>
-                            <p class='mb-2'>
-                                The list shows the active mission's polygons, circles and
-                                lines. <span class='fw-bold'>Shapes</span> go straight to
-                                configuration — the ring is the boundary offset outward
-                                by the entered distance (0 uses the boundary as-is).
-                                <span class='fw-bold'>Lines</span> ask what the line means.
-                            </p>
-                            <p class='mb-0'>
-                                <span class='fw-bold'>Manual Point</span> (collapsed card at
-                                the bottom of the picker) covers locations not in the
-                                DataSync: type coordinates (DD / DMS / MGRS) or press
-                                <span class='fw-bold'>Select on Map</span> and click the map,
-                                then <span class='fw-bold'>Use This Point</span>. A manual
-                                point gets a range ring at the entered distance.
-                            </p>
-                        </TablerBorder>
-
-                        <TablerBorder
-                            class='cloudtak-bg text-white mt-3'
-                            :fill-height='false'
-                            gap='sm'
-                        >
-                            <template #label>
-                                <p class='text-uppercase text-white-50 small mb-0'>
-                                    Line Modes
-                                </p>
-                            </template>
-                            <div class='d-flex flex-column gap-2'>
-                                <div class='cloudtak-accent border rounded-3 text-white px-2 py-2'>
-                                    <div class='fw-bold'>
-                                        Containment
-                                    </div>
-                                    <div class='text-secondary small'>
-                                        Distance offsets a corridor outward from the
-                                        line (0 = the line itself); trail crossings
-                                        are marked and the ring is posted with them.
-                                        Labels: Containment {n}
-                                    </div>
+                            <div class='modal-content'>
+                                <div class='modal-header'>
+                                    <h5 class='modal-title'>
+                                        Search Containment &mdash; Usage
+                                    </h5>
+                                    <button
+                                        type='button'
+                                        class='btn-close'
+                                        aria-label='Close'
+                                        @click='showHelp = false'
+                                    />
                                 </div>
-                                <div class='cloudtak-accent border rounded-3 text-white px-2 py-2'>
-                                    <div class='fw-bold'>
-                                        Location Check
-                                    </div>
-                                    <div class='text-secondary small'>
-                                        The raw line is intersected with the trail
-                                        network directly — no distance, no
-                                        transform; only markers are posted.
-                                        Labels: Check Location {n}
-                                    </div>
+                                <div class='modal-body help-modal'>
+                                    <p>
+                                        Pick a source &mdash; a mission shape, a mission line, a DataSync
+                                        marker, or a manually entered point &mdash; and the plugin finds
+                                        every place the trail network crosses the resulting boundary,
+                                        plots numbered markers, and posts them into the active DataSync
+                                        mission or onto your own map.
+                                    </p>
+
+                                    <h4 class='mt-3 mb-2'>
+                                        Pick a Source
+                                    </h4>
+                                    <p>
+                                        The list shows the active mission's polygons, circles and lines.
+                                        <span class='fw-bold'>Shapes</span> go straight to configuration
+                                        &mdash; the ring is the boundary offset outward by the entered
+                                        distance (0 uses the boundary as-is).
+                                        <span class='fw-bold'>Lines</span> ask what the line means.
+                                    </p>
+                                    <p>
+                                        <span class='fw-bold'>DataSync Marker</span> lists the mission's
+                                        point markers, ICP, LKP, IPP and PLS first.
+                                        <span class='fw-bold'>Use This Marker</span> opens Configure with
+                                        WiSAR Travel Time selected.
+                                    </p>
+                                    <p>
+                                        <span class='fw-bold'>Manual Point</span> (collapsed card at the
+                                        bottom of the picker) covers locations not in the DataSync: type
+                                        coordinates (DD / DMS / MGRS) or press
+                                        <span class='fw-bold'>Select on Map</span> and click the map, then
+                                        <span class='fw-bold'>Use This Point</span>. A point gets a range
+                                        ring at the entered distance, or a WiSAR Travel Time contour.
+                                    </p>
+                                    <p>
+                                        With no active DataSync, only the Manual Point is offered;
+                                        Generate and the preview still work, and Post to Map is available.
+                                    </p>
+
+                                    <h4 class='mt-3 mb-2'>
+                                        Line Modes
+                                    </h4>
+                                    <p>
+                                        <span class='fw-bold'>Containment</span> &mdash; distance offsets a
+                                        corridor outward from the line (0 = the line itself); trail
+                                        crossings are marked and the ring is posted with them. Labels:
+                                        Containment {n}.
+                                    </p>
+                                    <p>
+                                        <span class='fw-bold'>Location Check</span> &mdash; the raw line is
+                                        intersected with the trail network directly, with no distance or
+                                        transform; only markers are posted. Labels: Check Location {n}.
+                                    </p>
+
+                                    <h4 class='mt-3 mb-2'>
+                                        Configure
+                                    </h4>
+                                    <p>
+                                        Distance + units (hidden for Location Check and WiSAR), merge
+                                        spacing (crossings closer than this merge into one marker, default
+                                        50&nbsp;m), color, trail network (when more than one exists), and an
+                                        optional label prefix. Leave the prefix blank for Containment (or
+                                        Check Location) numbering in the Containment layer. A prefix such as
+                                        North names markers North 1, North 2, and files them in a layer
+                                        named North Containment. Settings other than the prefix persist per
+                                        device.
+                                    </p>
+
+                                    <h4 class='mt-3 mb-2'>
+                                        WiSAR Travel Time
+                                    </h4>
+                                    <p>
+                                        For a DataSync marker or a manual point, choose
+                                        <span class='fw-bold'>WiSAR Travel Time</span> instead of Distance.
+                                        Enter a flat-ground speed (or a preset) and up to 3 time intervals,
+                                        then <span class='fw-bold'>Run Travel Time Analysis</span>. WiSAR
+                                        models how far the subject could travel over terrain, land cover
+                                        and trails; each interval becomes a contour on the map.
+                                    </p>
+                                    <p>
+                                        Pick one <span class='fw-bold'>Contour for Containment</span> and
+                                        Generate: trail crossings are found on the outer boundary of every
+                                        part of that contour (holes ignored). The WiSAR server is the one
+                                        set in Incident Manager's Settings on this browser, otherwise the
+                                        default; Configure shows which.
+                                    </p>
+
+                                    <h4 class='mt-3 mb-2'>
+                                        Preview and Post
+                                    </h4>
+                                    <p>
+                                        The proposed ring (dashed) and numbered points render on the map
+                                        without touching the mission. Each crossing is listed so you can
+                                        center the map on it and uncheck any marker you do not want to
+                                        post. Unchecked markers stay on the preview, drawn lighter. Go back
+                                        to adjust, or post.
+                                    </p>
+                                    <p>
+                                        <span class='fw-bold'>Post to Mission</span>: checked markers
+                                        &mdash; and the ring, when one was generated &mdash; post to the
+                                        active DataSync in the Containment layer, or in &ldquo;{prefix}
+                                        Containment&rdquo; when a prefix is set, and sync to all
+                                        subscribers. Numbers are assigned at Generate from the highest
+                                        existing matching label and are the names that get posted.
+                                        Location Check markers number in order along the line; ring
+                                        crossings number clockwise from north.
+                                    </p>
+                                    <p class='mb-0'>
+                                        <span class='fw-bold'>Post to Map</span>: the same items go onto
+                                        your own map only, in a Containment folder in your features. They
+                                        are not sent to the TAK Server, so nobody else sees them.
+                                    </p>
+                                </div>
+                                <div class='modal-footer'>
+                                    <button
+                                        type='button'
+                                        class='btn btn-secondary'
+                                        @click='showHelp = false'
+                                    >
+                                        Close
+                                    </button>
                                 </div>
                             </div>
-                        </TablerBorder>
-
-                        <TablerBorder
-                            class='cloudtak-bg text-white mt-3'
-                            :fill-height='false'
-                            gap='sm'
-                        >
-                            <template #label>
-                                <p class='text-uppercase text-white-50 small mb-0'>
-                                    Configure
-                                </p>
-                            </template>
-                            <p class='mb-0'>
-                                Distance + units (hidden for Location Check), merge spacing
-                                (crossings closer than this merge into one marker, default
-                                50&nbsp;m), color, trail network (when more than one
-                                exists), and an optional label prefix. Leave the prefix
-                                blank for Containment (or Check Location) numbering in the
-                                Containment layer. A prefix such as North names markers
-                                North 1, North 2, and files them in a layer named North
-                                Containment. Settings other than the prefix persist per device.
-                            </p>
-                        </TablerBorder>
-
-                        <TablerBorder
-                            class='cloudtak-bg text-white mt-3'
-                            :fill-height='false'
-                            gap='sm'
-                        >
-                            <template #label>
-                                <p class='text-uppercase text-white-50 small mb-0'>
-                                    Preview And Post
-                                </p>
-                            </template>
-                            <p class='mb-2'>
-                                The proposed ring (dashed) and numbered points render on the
-                                map without touching the mission. Each crossing is listed so
-                                you can center the map on it and uncheck any marker you do
-                                not want to post. Unchecked markers stay on the preview,
-                                drawn lighter. Go back to adjust, or post.
-                            </p>
-                            <p class='mb-0'>
-                                Checked markers — and the ring, when one was generated —
-                                post to the active DataSync in the Containment layer, or in
-                                &ldquo;{prefix} Containment&rdquo; when a prefix is set, and
-                                sync to all subscribers. Numbers are assigned at Generate
-                                from the highest existing matching label and are the names
-                                that get posted. Location Check markers number in order
-                                along the line; ring crossings number clockwise from north.
-                            </p>
-                        </TablerBorder>
+                        </div>
                     </div>
-                    <div class='modal-footer'>
-                        <button
-                            type='button'
-                            class='btn btn-primary w-100'
-                            @click='showHelp = false'
-                        >
-                            Close
-                        </button>
-                    </div>
-                </TablerModal>
+                    <div class='modal-backdrop fade show' />
+                </template>
             </div>
         </template>
     </MenuTemplate>
@@ -2262,6 +2257,20 @@ async function saveSettings(): Promise<void> {
 .wisar-preset {
     line-height: 1.2;
     min-width: 5.5rem;
+}
+
+/* Usage window: the same surfaces as Incident Manager's reference windows
+   (IM src/components/incidentModal.css) */
+.sc-help-modal .modal-content {
+    background-color: var(--cloudtak-panel-bg, rgba(20, 20, 25, 0.98));
+    color: inherit;
+    border-color: var(--cloudtak-inset-border, rgba(255, 255, 255, 0.12));
+}
+
+.sc-help-modal .modal-header,
+.sc-help-modal .modal-footer {
+    border-color: var(--cloudtak-inset-border, rgba(255, 255, 255, 0.12));
+    background: transparent;
 }
 
 .contour-swatch {

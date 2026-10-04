@@ -6,18 +6,30 @@ to contain a search area.
 
 <img width="1123" height="514" alt="search_containment_plugin_screenshot" src="https://github.com/user-attachments/assets/10e7d01e-d653-4d19-b91b-a266a75b0a6c" />
 
-Pick a source — a mission shape, a mission line, or a manually entered point — and
-the plugin finds every place the trail network crosses the resulting boundary,
-plots numbered markers, and posts them into the active DataSync mission for the
-whole team.
+Pick a source — a mission shape, a mission line, a DataSync marker, or a manually
+entered point — and the plugin finds every place the trail network crosses the
+resulting boundary, plots numbered markers, and posts them into the active
+DataSync mission for the whole team, or onto your own map only.
+
+From a point (a DataSync marker or a manual point) the boundary can be a fixed
+distance or a **WiSAR Travel Time** contour: how far a subject could physically
+travel in a given time, modelled over terrain, land cover and trails by the
+shared WiSAR server.
 
 ## Requirements
 
 - A hosted vector basemap with **snapping enabled** (Admin → Basemaps;
   e.g. `snapping.pmtiles` in MinIO). The plugin discovers it the same way the
   route-snapping draw tool does.
-- An **active DataSync mission**: Menu → Data Sync → subscribe → make active.
-  The panel prompts you if there isn't one.
+- An **active DataSync mission** to post for the team (Menu → Data Sync →
+  subscribe → make active). Without one, everything up to the preview works,
+  and **Post to Map** puts the result on your own map only.
+- For **WiSAR Travel Time** (optional): a reachable WiSAR server. Search
+  Containment uses the WiSAR Server set in Incident Manager's Settings on this
+  browser, otherwise `https://wisar.clpdevtak.com`; the Configure step shows
+  which. The WiSAR server must list this CloudTAK (`WISAR_CLOUDTAK_INSTANCES`),
+  and this CloudTAK's Content-Security-Policy must allow the WiSAR address
+  (`NGINX_CSP_CONNECT_SRC`) unless both share a parent domain.
 
 ## Usage
 
@@ -39,9 +51,13 @@ steps: pick a source, configure, preview, post.
 
 ### 1. Pick a source
 
-The list shows the active mission's **polygons, circles, and lines** (markers are
-intentionally excluded — use the Manual Point entry instead). The refresh button
+The list shows the active mission's **polygons, circles, and lines**. Point
+markers are offered separately in the **DataSync Marker** card, and a location
+that isn't in the DataSync goes in the **Manual Point** card. The refresh button
 re-fetches the mission's features from the TAK Server if something is missing.
+
+With no active DataSync the list and the DataSync Marker card are hidden and a
+note says so; the Manual Point still works.
 
   <img width="311" height="200" alt="containment_selector copy" src="https://github.com/user-attachments/assets/fc11b51e-8e68-443f-9abe-4bd2d4f26f2b" />
 
@@ -63,6 +79,11 @@ Containment markers on a ring are numbered clockwise from north. The two label
 sequences are independent — each continues from the highest existing number in
 the mission, so repeat runs never collide.
 
+**DataSync Marker** (active DataSync only) lists every point marker in the
+mission, with ICP, LKP, IPP and PLS callsigns first and the rest alphabetically;
+repeated callsigns show their coordinates. **Use This Marker** opens Configure
+with WiSAR Travel Time selected (Distance is one click away).
+
 **Manual Point** (collapsible card at the bottom of the picker, closed by
 default) is for a location that isn't in the DataSync yet:
 
@@ -71,7 +92,7 @@ default) is for a location that isn't in the DataSync yet:
 - name it (optional) and press **Use This Point**.
 
 A manual point behaves like a marker: the ring is a range ring at the entered
-distance (must be greater than 0).
+distance (must be greater than 0), or a WiSAR Travel Time contour.
 
   <img width="312" height="168" alt="containment_selector" src="https://github.com/user-attachments/assets/f92dda42-686c-4e38-9225-8032e5b91d52" />
 
@@ -79,8 +100,11 @@ distance (must be greater than 0).
 
   <img width="452" height="280" alt="containment_configure" src="https://github.com/user-attachments/assets/a72a8d58-a1ed-4490-92fe-e9422da55599" />
 
+- **Distance | WiSAR Travel Time** — the method. WiSAR needs a single starting
+  point, so it is only available for a DataSync marker or a manual point; for
+  shapes and lines it is greyed out with the reason.
 - **Distance + Units** (miles or meters) — hidden for Location Check, which
-  always uses the raw line.
+  always uses the raw line, and for WiSAR.
 - **Merge points within (m)** — crossings closer together than this (default
   50 m) merge into a single marker; prevents marker spam at switchbacks and
   tile seams.
@@ -93,6 +117,21 @@ distance (must be greater than 0).
 
 Settings other than the prefix persist per device between runs.
 
+**WiSAR Travel Time** shows the starting point, the WiSAR server in use and a
+connection check, then the same form as Incident Manager:
+
+- **Flat-ground travel speed** in mph or km/h, or a preset (0.5 Impaired,
+  1.0 Slow, 2.0 Moderate, 3.1 Fit hiker mph).
+- **Time intervals** — 2, 4, 6, 8, 10 or 12 h, **up to 3** (2, 4 and 6 h by
+  default). Each becomes one contour.
+- **Run Travel Time Analysis** — queued and run on WiSAR (typically one to a
+  few minutes), with Cancel. Every contour is then drawn on the map.
+- **Contour for Containment** — pick one; it is drawn heavier. Generate uses
+  the outer boundary of every part of that contour (holes ignored), simplified
+  about 5 m.
+
+Changing the source discards the run; switching to Distance hides its preview.
+
 ### 3. Preview
 
 The proposed ring (dashed line) and numbered crossing points render on the map
@@ -104,12 +143,22 @@ left off the mission. The label range is reported when all are selected (e.g.
 
   <img width="452" height="185" alt="containment_preview" src="https://github.com/user-attachments/assets/27ab9650-93a3-4056-8970-4fa90045ea98" />
 
-### 4. Post to Mission
+### 4. Post
 
-Checked markers — and the containment ring, when one was generated — are posted
-into the active DataSync mission and sync to all subscribers. They are filed in
-the `Containment` layer, or in `{prefix} Containment` when a label prefix was
-set. Marker names are assigned at Generate and those exact names are posted.
+**Post to Mission** (needs an active DataSync): checked markers — and the
+containment ring, when one was generated — are posted into the active DataSync
+mission and sync to all subscribers. They are filed in the `Containment` layer,
+or in `{prefix} Containment` when a label prefix was set. Marker names are
+assigned at Generate and those exact names are posted. Markers generated with
+no active DataSync are renumbered from its existing markers once one is active.
+
+**Post to Map** (always available): the same items go onto your own map as
+your features, in a `Containment` (or `{prefix} Containment`) folder. They are
+saved to your CloudTAK profile and **not** sent to the TAK Server, so nobody
+else sees them.
+
+For WiSAR the ring is the contour outline, named like `ICP 2h Travel Time`
+(with ` 1`, ` 2` when the contour has several parts).
 
 ## Install
 
@@ -126,10 +175,13 @@ repo. Hard-refresh CloudTAK after building.
 | Symptom | Check |
 |---------|-------|
 | "No snapping tileset" | Admin: basemap has `snapping_enabled` + `snapping_layer`, vector, S3/MinIO hosted |
-| "Active DataSync" prompt | Subscribe to the mission on the map and make it active |
+| "No Active DataSync" note, Post to Mission disabled | Subscribe to the mission on the map and make it active, or use Post to Map |
+| WiSAR Travel Time greyed out | The source is a shape or line; WiSAR starts from a single point (DataSync marker or manual point) |
+| WiSAR "Can't reach WiSAR" | This CloudTAK's CSP doesn't allow the WiSAR address (`NGINX_CSP_CONNECT_SRC`), WiSAR's `WISAR_CORS_ORIGINS` / `WISAR_CLOUDTAK_INSTANCES` don't list this CloudTAK, or WiSAR is down |
+| WiSAR "did not accept this CloudTAK session" | WiSAR checks tokens against a different CloudTAK: fix this origin's entry in `WISAR_CLOUDTAK_INSTANCES`, or sign in again |
 | Features missing from the picker | Press the refresh button — it forces a server re-fetch of mission features |
 | 401 fetching trails | Session token (log out/in); tile server reachable from browser |
-| "Ring covers too many tiles" error | Reduce the distance — tile fetches are capped at 400 |
+| "Containment ring covers N tiles (max 3000)" | Reduce the distance, or pick a shorter WiSAR contour — tile fetches are capped at 3000 |
 | No crossings found | Verify trails exist near the ring/line at the tileset's maxzoom; widen the distance or check the right trail network is selected |
 
 ## Development
@@ -139,6 +191,20 @@ Files: `index.ts` (lifecycle: route under `home-menu`, menu item),
 `lib/geometry.ts` (pure ring/offset/intersection/cluster/sort math),
 `lib/trails.ts` (snapping basemap discovery + tile feature fetch),
 `lib/markers.ts` (CoT builders + label numbering).
+
+WiSAR: `lib/wisar.ts` (API client, identical to Incident Manager's, with a
+drift test against WiSAR's `docs/openapi.json`), `lib/wisarServer.ts` (server
+from Incident Manager's setting), `lib/wisarSource.ts` (starting point),
+`lib/wisarMarkers.ts` (DataSync marker list), `lib/wisarTravelTime.ts` (form
+logic, copied from Incident Manager), `lib/wisarContours.ts` (interval limit,
+contour list and rings), `lib/useWisarJob.ts` + `lib/WisarJobStatus.vue` (run
+and status).
+
+Unit tests (no package.json needed):
+
+```bash
+node --experimental-strip-types --test lib/*.test.ts
+```
 
 Typecheck & lint from the CloudTAK web root (covers `plugins/`):
 
