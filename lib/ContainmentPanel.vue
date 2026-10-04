@@ -878,116 +878,123 @@
                                     />
                                 </div>
                                 <div class='modal-body help-modal'>
-                                    <p>
-                                        Pick a source &mdash; a mission shape, a mission line, a DataSync
-                                        marker, or a manually entered point &mdash; and the plugin finds
-                                        every place the trail network crosses the resulting boundary,
-                                        plots numbered markers, and posts them into the active DataSync
-                                        mission or onto your own map.
-                                    </p>
-
-                                    <h4 class='mt-3 mb-2'>
-                                        Pick a Source
-                                    </h4>
-                                    <p>
-                                        The list shows the active mission's polygons, circles and lines.
-                                        <span class='fw-bold'>Shapes</span> go straight to configuration
-                                        &mdash; the ring is the boundary offset outward by the entered
-                                        distance (0 uses the boundary as-is).
-                                        <span class='fw-bold'>Lines</span> ask what the line means.
-                                    </p>
-                                    <p>
-                                        <span class='fw-bold'>DataSync Marker</span> lists the mission's
-                                        point markers, ICP, LKP, IPP and PLS first.
-                                        <span class='fw-bold'>Use This Marker</span> opens Configure with
-                                        WiSAR Travel Time selected.
-                                    </p>
-                                    <p>
-                                        <span class='fw-bold'>Manual Point</span> (collapsed card at the
-                                        bottom of the picker) covers locations not in the DataSync: type
-                                        coordinates (DD / DMS / MGRS) or press
-                                        <span class='fw-bold'>Select on Map</span> and click the map, then
-                                        <span class='fw-bold'>Use This Point</span>. A point gets a range
-                                        ring at the entered distance, or a WiSAR Travel Time contour.
-                                    </p>
-                                    <p>
-                                        With no active DataSync, only the Manual Point is offered;
-                                        Generate and the preview still work, and Post to Map is available.
-                                    </p>
-
-                                    <h4 class='mt-3 mb-2'>
-                                        Line Modes
-                                    </h4>
-                                    <p>
-                                        <span class='fw-bold'>Containment</span> &mdash; distance offsets a
-                                        corridor outward from the line (0 = the line itself); trail
-                                        crossings are marked and the ring is posted with them. Labels:
-                                        Containment {n}.
-                                    </p>
-                                    <p>
-                                        <span class='fw-bold'>Location Check</span> &mdash; the raw line is
-                                        intersected with the trail network directly, with no distance or
-                                        transform; only markers are posted. Labels: Check Location {n}.
-                                    </p>
-
-                                    <h4 class='mt-3 mb-2'>
-                                        Configure
-                                    </h4>
-                                    <p>
-                                        Distance + units (hidden for Location Check and WiSAR), merge
-                                        spacing (crossings closer than this merge into one marker, default
-                                        50&nbsp;m), color, trail network (when more than one exists), and an
-                                        optional label prefix. Leave the prefix blank for Containment (or
-                                        Check Location) numbering in the Containment layer. A prefix such as
-                                        North names markers North 1, North 2, and files them in a layer
-                                        named North Containment. Settings other than the prefix persist per
-                                        device.
-                                    </p>
-
-                                    <h4 class='mt-3 mb-2'>
-                                        WiSAR Travel Time
-                                    </h4>
-                                    <p>
-                                        For a DataSync marker or a manual point, choose
-                                        <span class='fw-bold'>WiSAR Travel Time</span> instead of Distance.
-                                        Enter a flat-ground speed (or a preset) and up to 3 time intervals,
-                                        then <span class='fw-bold'>Run Travel Time Analysis</span>. WiSAR
-                                        models how far the subject could travel over terrain, land cover
-                                        and trails; each interval becomes a contour on the map.
-                                    </p>
-                                    <p>
-                                        Pick one <span class='fw-bold'>Contour for Containment</span> and
-                                        Generate: trail crossings are found on the outer boundary of every
-                                        part of that contour (holes ignored). The WiSAR server is the one
-                                        set in Incident Manager's Settings on this browser, otherwise the
-                                        default; Configure shows which.
-                                    </p>
-
-                                    <h4 class='mt-3 mb-2'>
-                                        Preview and Post
-                                    </h4>
-                                    <p>
-                                        The proposed ring (dashed) and numbered points render on the map
-                                        without touching the mission. Each crossing is listed so you can
-                                        center the map on it and uncheck any marker you do not want to
-                                        post. Unchecked markers stay on the preview, drawn lighter. Go back
-                                        to adjust, or post.
-                                    </p>
-                                    <p>
-                                        <span class='fw-bold'>Post to Mission</span>: checked markers
-                                        &mdash; and the ring, when one was generated &mdash; post to the
-                                        active DataSync in the Containment layer, or in &ldquo;{prefix}
-                                        Containment&rdquo; when a prefix is set, and sync to all
-                                        subscribers. Numbers are assigned at Generate from the highest
-                                        existing matching label and are the names that get posted.
-                                        Location Check markers number in order along the line; ring
-                                        crossings number clockwise from north.
-                                    </p>
-                                    <p class='mb-0'>
-                                        <span class='fw-bold'>Post to Map</span>: the same items go onto
-                                        your own map only, in a Containment folder in your features. They
-                                        are not sent to the TAK Server, so nobody else sees them.
-                                    </p>
+                                    <div class='help-card'>
+                                        <p class='mb-0'>
+                                            Pick a source &mdash; a mission shape, a mission line, a DataSync
+                                            marker, or a manually entered point &mdash; and the plugin finds
+                                            every place the trail network crosses the resulting boundary,
+                                            plots numbered markers, and posts them into the active DataSync
+                                            mission or onto your own map.
+                                        </p>
+                                    </div>
+                                    <div class='help-card mt-3'>
+                                        <p class='help-card-label'>
+                                            Pick a Source
+                                        </p>
+                                        <p>
+                                            The list shows the active mission's polygons, circles and lines.
+                                            <span class='fw-bold'>Shapes</span> go straight to configuration
+                                            &mdash; the ring is the boundary offset outward by the entered
+                                            distance (0 uses the boundary as-is).
+                                            <span class='fw-bold'>Lines</span> ask what the line means.
+                                        </p>
+                                        <p>
+                                            <span class='fw-bold'>DataSync Marker</span> lists the mission's
+                                            point markers, ICP, LKP, IPP and PLS first.
+                                            <span class='fw-bold'>Use This Marker</span> opens Configure with
+                                            WiSAR Travel Time selected.
+                                        </p>
+                                        <p>
+                                            <span class='fw-bold'>Manual Point</span> (collapsed card at the
+                                            bottom of the picker) covers locations not in the DataSync: type
+                                            coordinates (DD / DMS / MGRS) or press
+                                            <span class='fw-bold'>Select on Map</span> and click the map, then
+                                            <span class='fw-bold'>Use This Point</span>. A point gets a range
+                                            ring at the entered distance, or a WiSAR Travel Time contour.
+                                        </p>
+                                        <p class='mb-0'>
+                                            With no active DataSync, only the Manual Point is offered;
+                                            Generate and the preview still work, and Post to Map is available.
+                                        </p>
+                                    </div>
+                                    <div class='help-card mt-3'>
+                                        <p class='help-card-label'>
+                                            Line Modes
+                                        </p>
+                                        <p>
+                                            <span class='fw-bold'>Containment</span> &mdash; distance offsets a
+                                            corridor outward from the line (0 = the line itself); trail
+                                            crossings are marked and the ring is posted with them. Labels:
+                                            Containment {n}.
+                                        </p>
+                                        <p class='mb-0'>
+                                            <span class='fw-bold'>Location Check</span> &mdash; the raw line is
+                                            intersected with the trail network directly, with no distance or
+                                            transform; only markers are posted. Labels: Check Location {n}.
+                                        </p>
+                                    </div>
+                                    <div class='help-card mt-3'>
+                                        <p class='help-card-label'>
+                                            Configure
+                                        </p>
+                                        <p class='mb-0'>
+                                            Distance + units (hidden for Location Check and WiSAR), merge
+                                            spacing (crossings closer than this merge into one marker, default
+                                            50&nbsp;m), color, trail network (when more than one exists), and an
+                                            optional label prefix. Leave the prefix blank for Containment (or
+                                            Check Location) numbering in the Containment layer. A prefix such as
+                                            North names markers North 1, North 2, and files them in a layer
+                                            named North Containment. Settings other than the prefix persist per
+                                            device.
+                                        </p>
+                                    </div>
+                                    <div class='help-card mt-3'>
+                                        <p class='help-card-label'>
+                                            WiSAR Travel Time
+                                        </p>
+                                        <p>
+                                            For a DataSync marker or a manual point, choose
+                                            <span class='fw-bold'>WiSAR Travel Time</span> instead of Distance.
+                                            Enter a flat-ground speed (or a preset) and up to 3 time intervals,
+                                            then <span class='fw-bold'>Run Travel Time Analysis</span>. WiSAR
+                                            models how far the subject could travel over terrain, land cover
+                                            and trails; each interval becomes a contour on the map.
+                                        </p>
+                                        <p class='mb-0'>
+                                            Pick one <span class='fw-bold'>Contour for Containment</span> and
+                                            Generate: trail crossings are found on the outer boundary of every
+                                            part of that contour (holes ignored). The WiSAR server is the one
+                                            set in Incident Manager's Settings on this browser, otherwise the
+                                            default; Configure shows which.
+                                        </p>
+                                    </div>
+                                    <div class='help-card mt-3'>
+                                        <p class='help-card-label'>
+                                            Preview and Post
+                                        </p>
+                                        <p>
+                                            The proposed ring (dashed) and numbered points render on the map
+                                            without touching the mission. Each crossing is listed so you can
+                                            center the map on it and uncheck any marker you do not want to
+                                            post. Unchecked markers stay on the preview, drawn lighter. Go back
+                                            to adjust, or post.
+                                        </p>
+                                        <p>
+                                            <span class='fw-bold'>Post to Mission</span>: checked markers
+                                            &mdash; and the ring, when one was generated &mdash; post to the
+                                            active DataSync in the Containment layer, or in &ldquo;{prefix}
+                                            Containment&rdquo; when a prefix is set, and sync to all
+                                            subscribers. Numbers are assigned at Generate from the highest
+                                            existing matching label and are the names that get posted.
+                                            Location Check markers number in order along the line; ring
+                                            crossings number clockwise from north.
+                                        </p>
+                                        <p class='mb-0'>
+                                            <span class='fw-bold'>Post to Map</span>: the same items go onto
+                                            your own map only, in a Containment folder in your features. They
+                                            are not sent to the TAK Server, so nobody else sees them.
+                                        </p>
+                                    </div>
                                 </div>
                                 <div class='modal-footer'>
                                     <button
@@ -2259,18 +2266,42 @@ async function saveSettings(): Promise<void> {
     min-width: 5.5rem;
 }
 
-/* Usage window: the same surfaces as Incident Manager's reference windows
-   (IM src/components/incidentModal.css) */
+/* Usage window: IM's reference-window layout with neutral gray cards (no
+   blue), explicit colors so it reads the same on every deployment theme */
 .sc-help-modal .modal-content {
-    background-color: var(--cloudtak-panel-bg, rgba(20, 20, 25, 0.98));
-    color: inherit;
-    border-color: var(--cloudtak-inset-border, rgba(255, 255, 255, 0.12));
+    background-color: #1a1a1a;
+    color: #e6e6e6;
+    border: 1px solid #3a3a3a;
 }
 
 .sc-help-modal .modal-header,
 .sc-help-modal .modal-footer {
-    border-color: var(--cloudtak-inset-border, rgba(255, 255, 255, 0.12));
+    border-color: #3a3a3a;
     background: transparent;
+}
+
+.sc-help-modal .modal-title {
+    color: #f2f2f2;
+}
+
+.sc-help-modal .btn-close {
+    filter: invert(1) grayscale(1) brightness(1.6);
+}
+
+.help-card {
+    background-color: #242424;
+    border: 1px solid #3a3a3a;
+    border-radius: 12px;
+    padding: 0.75rem 1rem;
+    color: #e6e6e6;
+}
+
+.help-card-label {
+    margin-bottom: 0.5rem;
+    font-size: 0.75rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #9a9a9a;
 }
 
 .contour-swatch {
